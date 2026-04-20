@@ -1,0 +1,107 @@
+[
+  {
+    "id": "garden",
+    "name": "Garden",
+    "dataset": "MipNeRF360",
+    "thumbnail": "/thumbnails/garden.svg",
+    "modelPath": "/assets/garden/point_cloud/iteration_30000/point_cloud.ply",
+    "description": "Outdoor garden scene reconstructed with Gaussian Splatting.",
+    "tags": ["featured", "outdoor"],
+    "iteration": 30000,
+    "metrics": {
+      "psnr": null,
+      "ssim": null,
+      "lpips": null
+    }
+  },
+  {
+    "id": "room",
+    "name": "Room",
+    "dataset": "MipNeRF360",
+    "thumbnail": "/thumbnails/room.svg",
+    "modelPath": "/assets/room/point_cloud/iteration_30000/point_cloud.ply",
+    "description": "Indoor room scene with dense furniture and narrow view corridors.",
+    "tags": ["featured", "indoor"],
+    "iteration": 30000,
+    "metrics": {
+      "psnr": null,
+      "ssim": null,
+      "lpips": null
+    }
+  },
+  {
+    "id": "bicycle",
+    "name": "Bicycle",
+    "dataset": "MipNeRF360",
+    "thumbnail": "/thumbnails/bicycle.svg",
+    "modelPath": "/assets/bicycle/point_cloud/iteration_30000/point_cloud.ply",
+    "description": "Outdoor bicycle scene with strong background depth variation.",
+    "tags": ["outdoor"],
+    "iteration": 30000,
+    "metrics": {
+      "psnr": null,
+      "ssim": null,
+      "lpips": null
+    }
+  },
+  {
+    "id": "bonsai",
+    "name": "Bonsai",
+    "dataset": "MipNeRF360",
+    "thumbnail": "/thumbnails/bonsai.svg",
+    "modelPath": "/assets/bonsai/point_cloud/iteration_30000/point_cloud.ply",
+    "description": "Indoor bonsai tabletop scene with fine structure and dense occlusion.",
+    "tags": ["indoor"],
+    "iteration": 30000,
+    "metrics": {
+      "psnr": null,
+      "ssim": null,
+      "lpips": null
+    }
+  },
+  {
+    "id": "counter",
+    "name": "Counter",
+    "dataset": "MipNeRF360",
+    "thumbnail": "/thumbnails/counter.svg",
+    "modelPath": "/assets/counter/point_cloud/iteration_30000/point_cloud.ply",
+    "description": "Kitchen counter scene with glossy surfaces and cluttered objects.",
+    "tags": ["indoor"],
+    "iteration": 30000,
+    "metrics": {
+      "psnr": null,
+      "ssim": null,
+      "lpips": null
+    }
+  },
+  {
+    "id": "kitchen",
+    "name": "Kitchen",
+    "dataset": "MipNeRF360",
+    "thumbnail": "/thumbnails/kitchen.svg",
+    "modelPath": "/assets/kitchen/point_cloud/iteration_30000/point_cloud.ply",
+    "description": "Wide kitchen reconstruction with repeated patterns and large planes.",
+    "tags": ["indoor"],
+    "iteration": 30000,
+    "metrics": {
+      "psnr": null,
+      "ssim": null,
+      "lpips": null
+    }
+  },
+  {
+    "id": "stump",
+    "name": "Stump",
+    "dataset": "MipNeRF360",
+    "thumbnail": "/thumbnails/stump.svg",
+    "modelPath": "/assets/stump/point_cloud/iteration_30000/point_cloud.ply",
+    "description": "Outdoor stump scene with foliage, thin geometry, and heavy parallax.",
+    "tags": ["outdoor"],
+    "iteration": 30000,
+    "metrics": {
+      "psnr": null,
+      "ssim": null,
+      "lpips": null
+    }
+  }
+]

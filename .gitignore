@@ -1,0 +1,27 @@
+# Ignore everything by default in this lightweight backup repo.
+*
+
+# Keep the repo metadata and ignore rules.
+!.gitignore
+
+# Track the browser viewer project and launcher only.
+!start_garden_browser_viewer.sh
+!gs-browser-viewer/
+!gs-browser-viewer/.nvmrc
+!gs-browser-viewer/README.md
+!gs-browser-viewer/index.html
+!gs-browser-viewer/package.json
+!gs-browser-viewer/package-lock.json
+!gs-browser-viewer/styles.css
+!gs-browser-viewer/src/
+!gs-browser-viewer/src/**
+!gs-browser-viewer/public/
+!gs-browser-viewer/public/data/
+!gs-browser-viewer/public/data/**
+!gs-browser-viewer/public/thumbnails/
+!gs-browser-viewer/public/thumbnails/**
+
+# Never track installed dependencies, build outputs, or linked model assets.
+gs-browser-viewer/node_modules/
+gs-browser-viewer/dist/
+gs-browser-viewer/public/assets/

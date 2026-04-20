@@ -1,0 +1,252 @@
+:root {
+  color-scheme: dark;
+  font-family: "Segoe UI", sans-serif;
+  background: #0a0f16;
+  color: #eef3f8;
+  --panel-bg: rgba(9, 14, 22, 0.72);
+  --panel-border: rgba(255, 255, 255, 0.1);
+  --panel-shadow: 0 24px 50px rgba(0, 0, 0, 0.28);
+  --accent: #8dd3ff;
+  --muted: rgba(238, 243, 248, 0.72);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.app-body {
+  background:
+    radial-gradient(circle at top, rgba(68, 123, 196, 0.24), transparent 34%),
+    linear-gradient(180deg, #0c1017, #06090d 72%);
+  overflow: hidden;
+}
+
+#viewer canvas {
+  display: block;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr) 320px;
+  grid-template-rows: 88px minmax(0, 1fr);
+  gap: 16px;
+  height: 100%;
+  padding: 16px;
+}
+
+.panel {
+  padding: 14px 16px;
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  backdrop-filter: blur(14px);
+  background: var(--panel-bg);
+  box-shadow: var(--panel-shadow);
+}
+
+.topbar {
+  grid-column: 1 / 4;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  padding: 6px 4px 0;
+}
+
+.topbar h1,
+.panel h2 {
+  margin: 0;
+}
+
+.topbar h1 {
+  font-size: 32px;
+  letter-spacing: 0.02em;
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  color: var(--accent);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.topbar__meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.topbar__meta span,
+.tag {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--panel-border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.sidebar {
+  min-height: 0;
+  overflow: auto;
+}
+
+.viewer-shell {
+  min-width: 0;
+  min-height: 0;
+}
+
+.viewer-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--panel-border);
+  border-radius: 22px;
+  overflow: hidden;
+  background: rgba(5, 8, 12, 0.6);
+  box-shadow: var(--panel-shadow);
+}
+
+#viewer {
+  width: 100%;
+  height: 100%;
+}
+
+.viewer-status {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  z-index: 20;
+  max-width: 360px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(5, 11, 18, 0.72);
+  border: 1px solid rgba(141, 211, 255, 0.2);
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.scene-grid {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.scene-card {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  text-decoration: none;
+  color: inherit;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.scene-card:hover,
+.scene-card.is-active {
+  border-color: rgba(141, 211, 255, 0.3);
+  background: rgba(141, 211, 255, 0.08);
+}
+
+.scene-card img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 10px;
+}
+
+.scene-card__body {
+  display: grid;
+  gap: 4px;
+}
+
+.scene-card__body strong {
+  font-size: 15px;
+}
+
+.scene-card__body span,
+.panel p,
+.panel code {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.panel p {
+  margin: 10px 0 0;
+}
+
+.panel code {
+  display: block;
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  overflow-wrap: anywhere;
+}
+
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.error-state {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 32px;
+  text-align: center;
+}
+
+@media (max-width: 1100px) {
+  .layout {
+    grid-template-columns: 280px minmax(0, 1fr);
+    grid-template-rows: 88px minmax(0, 1fr) auto;
+  }
+
+  .topbar {
+    grid-column: 1 / 3;
+  }
+
+  .sidebar--right {
+    grid-column: 1 / 3;
+  }
+}
+
+@media (max-width: 760px) {
+  .layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto minmax(420px, 1fr) auto;
+    overflow: auto;
+    height: auto;
+    min-height: 100%;
+  }
+
+  .topbar,
+  .sidebar--right {
+    grid-column: auto;
+  }
+
+  .topbar {
+    flex-direction: column;
+    align-items: start;
+    gap: 12px;
+  }
+
+  .viewer-stage {
+    min-height: 420px;
+  }
+}

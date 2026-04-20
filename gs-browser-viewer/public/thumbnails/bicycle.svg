@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="#10161d"/>
+  <circle cx="210" cy="240" r="62" fill="#22384c"/>
+  <circle cx="430" cy="240" r="62" fill="#22384c"/>
+  <path d="M210 240 L290 170 L360 170 L430 240" stroke="#7dc1ff" stroke-width="16" fill="none" stroke-linecap="round"/>
+  <text x="60" y="72" fill="#f5f8fb" font-size="42" font-family="Segoe UI, sans-serif">Bicycle</text>
+</svg>
