@@ -5,6 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GS Browser Viewer</title>
     <link rel="stylesheet" href="/styles.css" />
+    <script>
+      (function() {
+        var theme = localStorage.getItem('theme');
+        if (theme === 'dark') {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      })();
+    </script>
   </head>
   <body class="app-body">
     <div id="app"></div>

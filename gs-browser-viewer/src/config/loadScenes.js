@@ -14,7 +14,11 @@ export async function loadScenes() {
 
 export function getSceneFromQuery(scenes, search = window.location.search) {
   const params = new URLSearchParams(search);
-  const requestedId = (params.get("scene") || scenes[0].id).toLowerCase();
+  const sceneParam = params.get("scene");
+  if (!sceneParam) {
+    return null; // 没有指定场景时，返回 null 从而由 main.js 引导渲染主页
+  }
+  const requestedId = sceneParam.toLowerCase();
   const selectedScene = scenes.find((scene) => scene.id === requestedId);
-  return selectedScene || scenes[0];
+  return selectedScene || null;
 }

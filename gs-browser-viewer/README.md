@@ -2,6 +2,10 @@
 
 Browser-based Gaussian Splatting viewer for the FocusGS workspace.
 
+Repository: `https://github.com/Shirowana/FocusGS.git`
+
+Note: the GitHub snapshot keeps the UI source and small static assets, but does not version the large scene results under `public/assets/`. Prepare those assets locally before running the viewer.
+
 ## Requirements
 
 - Node.js `20.x` recommended via `.nvmrc`
