@@ -51,7 +51,16 @@ function ensureTransitionOverlay() {
   overlay.innerHTML = `
     <div class="page-transition__veil"></div>
     <div class="page-transition__pulse"></div>
-    <div class="page-transition__label">FocusGS</div>
+    <div class="page-transition__center">
+      <span class="page-transition__logo-shell" aria-hidden="true">
+        <img class="page-transition__logo page-transition__logo--light" src="/logo.png" alt="" />
+        <img class="page-transition__logo page-transition__logo--dark" src="/logo-dark.png" alt="" />
+      </span>
+      <div class="page-transition__copy">
+        <div class="page-transition__label">FocusGS</div>
+        <div class="page-transition__subtitle">Memory-Efficient 3D Gaussian Splatting</div>
+      </div>
+    </div>
   `;
   document.body.appendChild(overlay);
   return overlay;
