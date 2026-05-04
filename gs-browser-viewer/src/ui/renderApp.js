@@ -3,12 +3,33 @@
 import gardenHeroVideo from "../../figures/garden.mp4";
 import roomHeroVideo from "../../figures/room.mp4";
 import treehillHeroVideo from "../../figures/Treehill.mp4";
+import bicycleShowcaseVideo from "../../figures/Bicycle.mp4";
+import bonsaiShowcaseVideo from "../../figures/Bonsai.mp4";
+import counterShowcaseVideo from "../../figures/Counter.mp4";
+import flowersShowcaseVideo from "../../figures/Flowers.mp4";
+import kitchenShowcaseVideo from "../../figures/Kitchen.mp4";
+import stumpShowcaseVideo from "../../figures/Stump.mp4";
 import megs2OverviewImage from "../../figures/3e12860e6003878673d08e1b053c270c.png";
+import assetCardAImage from "../../figures/A_transparent.png";
+import assetCardBImage from "../../figures/B_transparent.png";
+import assetCardCImage from "../../figures/C_transparent.png";
 
 let parallaxScrollListener = null;
 let parallaxResizeListener = null;
 let parallaxFrameId = 0;
 let parallaxTargets = [];
+
+const SHOWCASE_SCENE_VIDEOS = {
+  bicycle: bicycleShowcaseVideo,
+  bonsai: bonsaiShowcaseVideo,
+  counter: counterShowcaseVideo,
+  flowers: flowersShowcaseVideo,
+  garden: gardenHeroVideo,
+  kitchen: kitchenShowcaseVideo,
+  room: roomHeroVideo,
+  stump: stumpShowcaseVideo,
+  treehill: treehillHeroVideo,
+};
 
 // ---- 视差初始化 ----
 function clamp(value, min, max) {
@@ -177,8 +198,8 @@ const HOME_PIPELINE_STEPS = [
     step: "01",
     label: "Data Preparation",
     title: "数据准备",
-    summary: "整理多视角图像、建立输入目录，并为后续 SfM 与训练流程准备统一格式。",
-    note: "适合从图片目录或视频抽帧开始，强调输入清洗和场景组织。",
+    summary: "支持图片目录、单个视频与已完成 COLMAP 工程三种输入起点，并为后续流程分配合适的预处理路径。",
+    note: "图片目录会进入 COLMAP，视频会先抽帧再建图，而已处理好的 COLMAP 数据则可直接进入训练。",
     mediaSrc: "",
     visual: "prepare",
   },
@@ -193,28 +214,693 @@ const HOME_PIPELINE_STEPS = [
     visual: "train",
   },
   {
-    id: "show",
+    id: "export",
     step: "03",
-    label: "Result Presentation",
-    title: "结果展示",
-    summary: "将训练输出接入浏览器端 viewer，在 Web 界面中完成交互式三维巡览与结果浏览。",
-    note: "训练侧资产与展示侧页面通过静态结果和场景配置建立稳定联动。",
+    label: "Result Export",
+    title: "结果导出",
+    summary: "将训练完成后的 Gaussian 结果整理、导出并转换为适合后续分发与展示的输出资产。",
+    note: "这一阶段强调结果文件的整理、格式转换与可发布性，为网页端加载和后续复用做好准备。",
     mediaSrc: "",
     visual: "show",
   },
   {
     id: "history",
     step: "04",
-    label: "History Recall",
-    title: "历史回溯",
-    summary: "回看不同训练输出、实验记录与结果版本，为横向比较和迭代追踪保留完整上下文。",
-    note: "适合后续扩展成训练日志、指标曲线与结果对比入口。",
+    label: "History Records",
+    title: "历史记录",
+    summary: "保留不同训练任务、输出结果与关键实验记录，便于后续回看、比较与管理。",
+    note: "适合作为任务时间线、结果版本归档和历史实验检索的统一入口。",
     mediaSrc: "",
     visual: "history",
   },
 ];
 
 const HOME_GITHUB_LINK = "https://github.com/Shirowana/FocusGS.git";
+
+const WORKSPACE_INPUT_MODES = {
+  images: {
+    key: "images",
+    label: "图片目录",
+    buttonLabel: "图片目录",
+    inputLabel: "选择一个图片目录",
+    dropzoneTitle: "拖拽图片文件夹到这里，或点击选择目录。",
+    dropzoneHint: "支持任何图像格式",
+    pickerKind: "folder",
+    accept: "image/*",
+    timelineSteps: [
+      { title: "上传图片", detail: "读取图片文件夹并统计输入内容。" },
+      { title: "COLMAP", detail: "提取特征、完成匹配和稀疏建图。" },
+      { title: "MEGS² 训练", detail: "进入 MEGS² 重建训练流程。" },
+      { title: "结果导出", detail: "导出可浏览的结果资产。" },
+    ],
+    jobTitle: "image_folder_job.json",
+    jobPhaseIntro: "图片文件夹输入已准备好。",
+  },
+  video: {
+    key: "video",
+    label: "单个视频",
+    buttonLabel: "单个视频",
+    inputLabel: "选择一个视频文件",
+    dropzoneTitle: "拖拽视频到这里，或点击选择视频。",
+    dropzoneHint: "支持单个视频文件",
+    pickerKind: "video",
+    accept: "video/*",
+    timelineSteps: [
+      { title: "上传视频", detail: "读取单个视频文件并准备抽帧。" },
+      { title: "抽帧", detail: "将视频切分为多张训练输入图像。" },
+      { title: "COLMAP", detail: "完成特征提取、匹配和稀疏建图。" },
+      { title: "MEGS² 训练", detail: "进入 MEGS² 重建训练流程。" },
+      { title: "结果导出", detail: "导出可浏览的结果资产。" },
+    ],
+    jobTitle: "video_job.json",
+    jobPhaseIntro: "视频输入已准备好。",
+  },
+  colmap: {
+    key: "colmap",
+    label: "COLMAP",
+    buttonLabel: "COLMAP",
+    inputLabel: "选择一个 COLMAP 工程目录",
+    dropzoneTitle: "拖拽COLMAP工程文件夹到这里，或点击选择目录。",
+    dropzoneHint: "需要包含 sparse/0 等关键结构",
+    pickerKind: "folder",
+    accept: ".bin,.txt,.png,.jpg,.jpeg,.json",
+    timelineSteps: [
+      { title: "已检查到COLMAP数据", detail: "校验 sparse/0 与相机模型是否可用。" },
+      { title: "MEGS² 训练", detail: "直接进入 MEGS² 重建训练流程。" },
+      { title: "结果导出", detail: "导出可浏览的结果资产。" },
+    ],
+    jobTitle: "colmap_job.json",
+    jobPhaseIntro: "COLMAP 工程已就绪。",
+  },
+};
+
+function getWorkspaceInputMode(modeKey = "images") {
+  return WORKSPACE_INPUT_MODES[modeKey] || WORKSPACE_INPUT_MODES.images;
+}
+
+const WORKSPACE_COMMON_PARAMETERS = [
+  {
+    title: "通用任务参数",
+    badge: "通用",
+    items: [
+      {
+        key: "batch_size",
+        label: "视角批大小",
+        type: "number",
+        defaultValue: 1,
+        min: 1,
+        max: 4,
+        step: 1,
+        recommendation: "推荐 1-2",
+        description: "控制每轮并行采样的视角数量，默认以较小批次保证训练稳定性。",
+      },
+      {
+        key: "save_interval",
+        label: "结果保存间隔",
+        type: "number",
+        defaultValue: 5000,
+        min: 1000,
+        max: 10000,
+        step: 500,
+        recommendation: "推荐 5000",
+        description: "控制中间结果与检查点的保存频率，过小会增加 I/O 负担。",
+      },
+    ],
+  },
+];
+
+const WORKSPACE_PARAMETER_PRESETS = {
+  images: [
+    {
+      title: "COLMAP 建图参数",
+      badge: "建图",
+      items: [
+        {
+          key: "camera_model",
+          label: "相机模型",
+          type: "select",
+          defaultValue: "OPENCV",
+          options: ["OPENCV", "PINHOLE", "SIMPLE_PINHOLE"],
+          recommendation: "推荐 OPENCV",
+          description: "控制 COLMAP 读取图像时采用的内参模型。",
+        },
+        {
+          key: "single_camera",
+          label: "单相机假设",
+          type: "checkbox",
+          defaultValue: true,
+          recommendation: "推荐 开启",
+          description: "同一数据集共享一套相机内参，适合同设备连续拍摄。",
+        },
+        {
+          key: "matcher",
+          label: "匹配方式",
+          type: "select",
+          defaultValue: "exhaustive",
+          options: ["exhaustive", "sequential"],
+          recommendation: "推荐 exhaustive",
+          description: "全匹配更稳，顺序匹配更快，适合连续视频帧。",
+        },
+        {
+          key: "use_gpu",
+          label: "使用 GPU 特征提取",
+          type: "checkbox",
+          defaultValue: true,
+          recommendation: "推荐 开启",
+          description: "对应 COLMAP 的 SIFT GPU 开关，可明显缩短建图准备时间。",
+        },
+      ],
+    },
+    {
+      title: "MEGS² 训练参数",
+      badge: "训练",
+      items: [
+        {
+          key: "iterations",
+          label: "训练轮数",
+          type: "number",
+          defaultValue: 30000,
+          min: 7000,
+          max: 50000,
+          step: 1000,
+          recommendation: "推荐 30000",
+          description: "控制主训练时长，轮数越高通常越稳定，但耗时也更长。",
+        },
+        {
+          key: "lambda_dssim",
+          label: "DSSIM 权重",
+          type: "number",
+          defaultValue: 0.2,
+          min: 0,
+          max: 1,
+          step: 0.05,
+          recommendation: "推荐 0.15-0.30",
+          description: "平衡 L1 与结构相似度损失，过高可能牺牲颜色细节。",
+        },
+        {
+          key: "position_lr_init",
+          label: "初始位置学习率",
+          type: "number",
+          defaultValue: 0.00016,
+          min: 0.00001,
+          max: 0.001,
+          step: 0.00001,
+          recommendation: "推荐 1.6e-4",
+          description: "控制 Gaussian 位置更新速度，过大会造成几何震荡。",
+        },
+        {
+          key: "densify_grad_threshold",
+          label: "致密化梯度阈值",
+          type: "number",
+          defaultValue: 0.0002,
+          min: 0.00005,
+          max: 0.001,
+          step: 0.00005,
+          recommendation: "推荐 2e-4",
+          description: "控制何时触发 densify / prune，直接影响点数增长节奏。",
+        },
+      ],
+    },
+    {
+      title: "MEGS² 剪枝参数",
+      badge: "优化",
+      items: [
+        {
+          key: "prune_ratio1",
+          label: "第一阶段剪枝比例",
+          type: "number",
+          defaultValue: 0.5,
+          min: 0.1,
+          max: 0.9,
+          step: 0.05,
+          recommendation: "推荐 0.40-0.60",
+          description: "用于第一轮简化筛选，过高可能过早丢失结构。",
+        },
+        {
+          key: "prune_ratio2",
+          label: "第二阶段剪枝比例",
+          type: "number",
+          defaultValue: 0.8,
+          min: 0.4,
+          max: 0.95,
+          step: 0.05,
+          recommendation: "推荐 0.75-0.85",
+          description: "用于后期统一剪枝，决定最终轻量化程度。",
+        },
+        {
+          key: "sharpness_ratio",
+          label: "锐度保留比例",
+          type: "number",
+          defaultValue: 0.7,
+          min: 0.3,
+          max: 0.95,
+          step: 0.05,
+          recommendation: "推荐 0.65-0.75",
+          description: "影响 SG 颜色表示中高频信息的保留强度。",
+        },
+        {
+          key: "rho_lr",
+          label: "稀疏优化学习率",
+          type: "number",
+          defaultValue: 0.0005,
+          min: 0.0001,
+          max: 0.002,
+          step: 0.0001,
+          recommendation: "推荐 5e-4",
+          description: "控制后期 sparsifying optimizing 的更新幅度。",
+        },
+      ],
+    },
+  ],
+  video: [
+    {
+      title: "视频抽帧参数",
+      badge: "抽帧",
+      items: [
+        {
+          key: "sample_fps",
+          label: "采样帧率",
+          type: "number",
+          defaultValue: 2,
+          min: 1,
+          max: 10,
+          step: 1,
+          recommendation: "推荐 2-4 fps",
+          description: "控制从视频中抽帧的频率，过高会带来大量相似帧。",
+        },
+        {
+          key: "max_frames",
+          label: "最大抽帧数量",
+          type: "number",
+          defaultValue: 240,
+          min: 60,
+          max: 600,
+          step: 20,
+          recommendation: "推荐 120-300",
+          description: "用于限制输入规模，避免超长视频直接拖慢后续建图。",
+        },
+        {
+          key: "short_side",
+          label: "短边分辨率",
+          type: "number",
+          defaultValue: 1080,
+          min: 720,
+          max: 1600,
+          step: 80,
+          recommendation: "推荐 960-1280",
+          description: "抽帧后图像的短边目标尺寸，影响建图速度和细节。",
+        },
+        {
+          key: "output_format",
+          label: "抽帧格式",
+          type: "select",
+          defaultValue: "jpg",
+          options: ["jpg", "png"],
+          recommendation: "推荐 jpg",
+          description: "JPG 更轻更快，PNG 更适合无损保留但体积更大。",
+        },
+      ],
+    },
+    {
+      title: "COLMAP 建图参数",
+      badge: "建图",
+      items: [
+        {
+          key: "camera_model",
+          label: "相机模型",
+          type: "select",
+          defaultValue: "OPENCV",
+          options: ["OPENCV", "PINHOLE", "SIMPLE_PINHOLE"],
+          recommendation: "推荐 OPENCV",
+          description: "视频抽帧通常仍按统一内参处理，默认 OPENCV 更稳。",
+        },
+        {
+          key: "single_camera",
+          label: "单相机假设",
+          type: "checkbox",
+          defaultValue: true,
+          recommendation: "推荐 开启",
+          description: "单条视频通常来自同一镜头，建议保留单相机假设。",
+        },
+        {
+          key: "matcher",
+          label: "匹配方式",
+          type: "select",
+          defaultValue: "sequential",
+          options: ["sequential", "exhaustive"],
+          recommendation: "推荐 sequential",
+          description: "视频帧相邻相关性更强，顺序匹配通常更符合场景特征。",
+        },
+        {
+          key: "ba_tolerance",
+          label: "BA 容差",
+          type: "number",
+          defaultValue: 0.000001,
+          min: 0.0000001,
+          max: 0.00001,
+          step: 0.0000001,
+          recommendation: "推荐 1e-6",
+          description: "控制 bundle adjustment 收敛精度，越小越严格但更慢。",
+        },
+      ],
+    },
+    {
+      title: "MEGS² 训练参数",
+      badge: "训练",
+      items: [
+        {
+          key: "iterations",
+          label: "训练轮数",
+          type: "number",
+          defaultValue: 40000,
+          min: 10000,
+          max: 60000,
+          step: 1000,
+          recommendation: "推荐 30000-40000",
+          description: "视频输入通常帧数更多，适当提高轮数更利于收敛。",
+        },
+        {
+          key: "opacity_lr",
+          label: "透明度学习率",
+          type: "number",
+          defaultValue: 0.05,
+          min: 0.005,
+          max: 0.1,
+          step: 0.005,
+          recommendation: "推荐 0.03-0.05",
+          description: "影响 splat 的显隐收敛速度，对噪点与空洞较敏感。",
+        },
+        {
+          key: "densify_from_iter",
+          label: "致密化起始轮数",
+          type: "number",
+          defaultValue: 500,
+          min: 100,
+          max: 3000,
+          step: 100,
+          recommendation: "推荐 500",
+          description: "控制何时开始 densify，过早可能放大前期噪声。",
+        },
+        {
+          key: "optimizing_spa_interval",
+          label: "稀疏优化间隔",
+          type: "number",
+          defaultValue: 50,
+          min: 20,
+          max: 200,
+          step: 10,
+          recommendation: "推荐 50",
+          description: "控制 MEGS² 稀疏优化触发频率，影响后期剪枝节奏。",
+        },
+      ],
+    },
+    {
+      title: "MEGS² 剪枝参数",
+      badge: "优化",
+      items: [
+        {
+          key: "prune_ratio1",
+          label: "第一阶段剪枝比例",
+          type: "number",
+          defaultValue: 0.5,
+          min: 0.1,
+          max: 0.9,
+          step: 0.05,
+          recommendation: "推荐 0.40-0.60",
+          description: "用于第一轮简化筛选，过高可能过早丢失结构。",
+        },
+        {
+          key: "prune_ratio2",
+          label: "第二阶段剪枝比例",
+          type: "number",
+          defaultValue: 0.8,
+          min: 0.4,
+          max: 0.95,
+          step: 0.05,
+          recommendation: "推荐 0.75-0.85",
+          description: "用于后期统一剪枝，决定最终轻量化程度。",
+        },
+        {
+          key: "sharpness_ratio",
+          label: "锐度保留比例",
+          type: "number",
+          defaultValue: 0.7,
+          min: 0.3,
+          max: 0.95,
+          step: 0.05,
+          recommendation: "推荐 0.65-0.75",
+          description: "影响 SG 颜色表示中高频信息的保留强度。",
+        },
+        {
+          key: "rho_lr",
+          label: "稀疏优化学习率",
+          type: "number",
+          defaultValue: 0.0005,
+          min: 0.0001,
+          max: 0.002,
+          step: 0.0001,
+          recommendation: "推荐 5e-4",
+          description: "控制后期 sparsifying optimizing 的更新幅度。",
+        },
+      ],
+    },
+  ],
+  colmap: [
+    {
+      title: "COLMAP 工程检查",
+      badge: "输入",
+      items: [
+        {
+          key: "input_image_dir",
+          label: "训练图像目录",
+          type: "select",
+          defaultValue: "images",
+          options: ["images"],
+          recommendation: "推荐按重建尺度选择",
+          description: "用于手动指定训练实际读取的图像目录。",
+        },
+        {
+          key: "sparse_root",
+          label: "稀疏模型目录",
+          type: "text",
+          defaultValue: "sparse/0",
+          recommendation: "推荐 sparse/0",
+          description: "指定工程内有效的 sparse 模型根目录，用于快速检查与加载。",
+        },
+        {
+          key: "require_cameras_bin",
+          label: "检查 cameras 文件",
+          type: "checkbox",
+          defaultValue: true,
+          recommendation: "推荐 开启",
+          description: "要求目录中存在 cameras.bin 或 cameras.txt。",
+        },
+        {
+          key: "require_images_bin",
+          label: "检查 images 文件",
+          type: "checkbox",
+          defaultValue: true,
+          recommendation: "推荐 开启",
+          description: "要求目录中存在 images.bin 或 images.txt。",
+        },
+        {
+          key: "require_points_bin",
+          label: "检查 points3D 文件",
+          type: "checkbox",
+          defaultValue: true,
+          recommendation: "推荐 开启",
+          description: "要求目录中存在 points3D.bin 或 points3D.txt。",
+        },
+      ],
+    },
+    {
+      title: "MEGS² 训练参数",
+      badge: "训练",
+      items: [
+        {
+          key: "iterations",
+          label: "训练轮数",
+          type: "number",
+          defaultValue: 30000,
+          min: 7000,
+          max: 50000,
+          step: 1000,
+          recommendation: "推荐 30000",
+          description: "已具备 COLMAP 输入时，可以直接把训练轮数作为主调节项。",
+        },
+        {
+          key: "feature_lr",
+          label: "颜色学习率",
+          type: "number",
+          defaultValue: 0.0025,
+          min: 0.0005,
+          max: 0.01,
+          step: 0.0005,
+          recommendation: "推荐 2.5e-3",
+          description: "控制颜色特征更新速度，过大容易造成颜色闪烁。",
+        },
+        {
+          key: "scaling_lr",
+          label: "尺度学习率",
+          type: "number",
+          defaultValue: 0.005,
+          min: 0.001,
+          max: 0.02,
+          step: 0.001,
+          recommendation: "推荐 5e-3",
+          description: "控制 Gaussian 尺度收缩/扩张速度，影响边界收敛。",
+        },
+        {
+          key: "rotation_lr",
+          label: "旋转学习率",
+          type: "number",
+          defaultValue: 0.001,
+          min: 0.0002,
+          max: 0.005,
+          step: 0.0002,
+          recommendation: "推荐 1e-3",
+          description: "控制方向参数更新速度，适合微调结构对齐表现。",
+        },
+      ],
+    },
+    {
+      title: "MEGS² 剪枝参数",
+      badge: "优化",
+      items: [
+        {
+          key: "lambda_sh_sparsity",
+          label: "稀疏正则权重",
+          type: "number",
+          defaultValue: 0.01,
+          min: 0.001,
+          max: 0.05,
+          step: 0.001,
+          recommendation: "推荐 0.005-0.02",
+          description: "控制 SG/SH 参数的稀疏约束强度，过高会压制细节。",
+        },
+        {
+          key: "prune_ratio1",
+          label: "第一阶段剪枝比例",
+          type: "number",
+          defaultValue: 0.5,
+          min: 0.1,
+          max: 0.9,
+          step: 0.05,
+          recommendation: "推荐 0.40-0.60",
+          description: "第一轮筛选比例，决定早期结构保留多少。",
+        },
+        {
+          key: "prune_ratio2",
+          label: "第二阶段剪枝比例",
+          type: "number",
+          defaultValue: 0.8,
+          min: 0.4,
+          max: 0.95,
+          step: 0.05,
+          recommendation: "推荐 0.75-0.85",
+          description: "后期进一步压缩结果体积的核心比例。",
+        },
+        {
+          key: "optimizing_spa_stop_iter",
+          label: "稀疏优化结束轮数",
+          type: "number",
+          defaultValue: 35200,
+          min: 20000,
+          max: 50000,
+          step: 200,
+          recommendation: "推荐 35200",
+          description: "决定后期稀疏优化持续到什么时候，影响最终压缩程度。",
+        },
+      ],
+    },
+  ],
+};
+
+function getPreferredColmapImageDir(imageDirs = []) {
+  const normalized = imageDirs.map((dir) => dir.toLowerCase());
+  const preferredOrder = ["images_4", "images4", "images", "images_2", "images2", "images_8", "images8"];
+  const hit = preferredOrder.find((name) => normalized.includes(name));
+  if (hit) {
+    return imageDirs[normalized.indexOf(hit)];
+  }
+  return imageDirs[0] || "images";
+}
+
+function getWorkspaceParameterPreset(modeKey = "images", context = {}) {
+  const baseGroups = WORKSPACE_PARAMETER_PRESETS[modeKey] || WORKSPACE_PARAMETER_PRESETS.images;
+  const clonedGroups = baseGroups.map((group) => ({
+    ...group,
+    items: group.items.map((item) => ({ ...item, options: Array.isArray(item.options) ? [...item.options] : item.options })),
+  }));
+
+  if (modeKey === "colmap") {
+    const imageDirs = Array.isArray(context.colmapImageDirs) && context.colmapImageDirs.length ? context.colmapImageDirs : ["images"];
+    const preferredDir = getPreferredColmapImageDir(imageDirs);
+    const inputGroup = clonedGroups[0];
+    if (inputGroup) {
+      inputGroup.items = inputGroup.items.map((item) =>
+        item.key === "input_image_dir"
+          ? {
+              ...item,
+              options: imageDirs,
+              defaultValue: preferredDir,
+            }
+          : item,
+      );
+    }
+  }
+
+  return [...WORKSPACE_COMMON_PARAMETERS, ...clonedGroups];
+}
+
+function getWorkspaceDefaultParamValues(modeKey = "images", currentValues = {}, context = {}) {
+  const groups = getWorkspaceParameterPreset(modeKey, context);
+  const nextValues = {};
+
+  groups.forEach((group) => {
+    group.items.forEach((item) => {
+      const currentValue = currentValues[item.key];
+      if (item.type === "select" && Array.isArray(item.options) && item.options.length) {
+        nextValues[item.key] = item.options.includes(currentValue) ? currentValue : item.defaultValue;
+      } else {
+        nextValues[item.key] = currentValue ?? item.defaultValue;
+      }
+    });
+  });
+
+  return nextValues;
+}
+
+const LIGHTWEIGHT_ASSET_CARDS = [
+  {
+    eyebrow: "Step A",
+    title: "原始 3DGS 结果",
+    subtitle: "Original Gaussian Output",
+    copy: "保留训练后 Gaussian primitive 的完整结果形态，适合作为高质量重建资产的原始输出基线。",
+    image: assetCardAImage,
+    imageAlt: "Original 3DGS result",
+    tone: "blue",
+  },
+  {
+    eyebrow: "Step B",
+    title: "轻量化处理流程",
+    subtitle: "Lightweight Conversion Pipeline",
+    copy: "对训练结果进行结构整理、格式转换与面向网页展示的压缩处理，为后续快速传输与加载建立中间层。",
+    image: assetCardBImage,
+    imageAlt: "Lightweight processing pipeline",
+    tone: "cyan",
+    mediaClassName: "asset-save-card__media--tall",
+  },
+  {
+    eyebrow: "Step C",
+    title: "轻量化高斯资产",
+    subtitle: "Web-Ready Gaussian Asset",
+    copy: "生成更适合浏览器端分发、预览与交互加载的轻量资产形态，降低展示侧的体积与等待成本。",
+    image: assetCardCImage,
+    imageAlt: "Lightweight gaussian asset",
+    tone: "green",
+  },
+];
 
 const SCENE_HIGHLIGHTS = {
   garden: [
@@ -263,21 +949,17 @@ function isVideoAsset(src = "") {
   return /\.(mp4|webm)$/i.test(src);
 }
 
-function renderResponsiveMedia({ src = "", alt = "", className = "", poster = "" }) {
+function renderResponsiveMedia({ src = "", alt = "", className = "", poster = "", preload = "metadata" }) {
   if (!src) return "";
   if (isVideoAsset(src)) {
     const posterAttr = poster ? ` poster="${poster}"` : "";
-    return `<video class="${className}" src="${src}"${posterAttr} autoplay muted loop playsinline></video>`;
+    return `<video class="${className}" src="${src}"${posterAttr} autoplay muted loop playsinline preload="${preload}"></video>`;
   }
   return `<img class="${className}" src="${src}" alt="${alt}" loading="lazy" />`;
 }
 
 function getScenePreviewMedia(scene) {
-  return scene.previewMedia || scene.thumbnail;
-}
-
-function getScenePrimaryTag(scene) {
-  return (scene.tags || []).find((tag) => tag !== "featured") || "scene";
+  return scene.previewMedia || SHOWCASE_SCENE_VIDEOS[scene.id] || scene.thumbnail;
 }
 
 function buildHeroDemoStrip() {
@@ -340,6 +1022,40 @@ function buildMethodVisual() {
   `;
 }
 
+function buildLightweightAssetCards() {
+  return LIGHTWEIGHT_ASSET_CARDS
+    .map((card, index) => {
+      const cardMarkup = `
+        <article class="asset-save-card asset-save-card--${card.tone}" data-parallax-speed="${0.04 + index * 0.01}" data-parallax-max="${18 + index * 4}">
+          <div class="asset-save-card__media ${card.mediaClassName || ""}">
+            <div class="asset-save-card__frame ${card.mediaClassName || ""}">
+              <img class="asset-save-card__image" src="${card.image}" alt="${card.imageAlt}" loading="lazy" />
+            </div>
+          </div>
+          <div class="asset-save-card__body">
+            <span class="asset-save-card__eyebrow">${card.eyebrow}</span>
+            <h3>${card.title}</h3>
+            <p class="asset-save-card__subtitle">${card.subtitle}</p>
+            <p class="asset-save-card__copy">${card.copy}</p>
+          </div>
+        </article>
+      `;
+
+      if (index === LIGHTWEIGHT_ASSET_CARDS.length - 1) {
+        return cardMarkup;
+      }
+
+      return `
+        ${cardMarkup}
+        <div class="asset-save-arrow" aria-hidden="true">
+          <span class="asset-save-arrow__line"></span>
+          <span class="asset-save-arrow__head"></span>
+        </div>
+      `;
+    })
+    .join("");
+}
+
 function buildShowcaseSceneCards(scenes, activeSceneId) {
   return scenes
     .map((scene) => {
@@ -365,9 +1081,66 @@ function buildShowcaseSceneCards(scenes, activeSceneId) {
     .join("");
 }
 
+function buildShowcaseCarousel(scene, scenes) {
+  const activeIndex = Math.max(
+    0,
+    scenes.findIndex((item) => item.id === scene.id),
+  );
+  const total = scenes.length;
+  const previousScene = scenes[(activeIndex - 1 + total) % total];
+  const nextScene = scenes[(activeIndex + 1) % total];
+
+  return `
+    <div class="showcase-carousel" id="showcase-carousel" data-active-index="${activeIndex}">
+      <button class="showcase-carousel__nav" type="button" data-direction="prev" aria-label="Previous scene">
+        <span aria-hidden="true">‹</span>
+      </button>
+      <div class="showcase-carousel__center">
+        <div class="showcase-carousel__hint">
+          <strong>${activeIndex + 1}</strong>
+          <span>/</span>
+          <strong>${total}</strong>
+        </div>
+        <div class="showcase-carousel__stage-card">
+          <div class="showcase-carousel__edge">
+            <span class="showcase-carousel__edge-label">Prev</span>
+            <strong>${previousScene.name}</strong>
+          </div>
+          <div class="showcase-carousel__active-card">
+            <div class="showcase-carousel__preview">
+              ${renderResponsiveMedia({
+                src: scene.thumbnail,
+                alt: `${scene.name} preview`,
+                className: "showcase-carousel__preview-media",
+                poster: scene.thumbnail,
+              })}
+              <span class="showcase-carousel__preview-veil"></span>
+            </div>
+            <div class="showcase-carousel__active-meta">
+              <strong>${scene.name}</strong>
+              <span>${scene.dataset} · ${scene.imageCount ? `${scene.imageCount} images` : "Image count pending"}</span>
+            </div>
+          </div>
+          <div class="showcase-carousel__edge showcase-carousel__edge--right">
+            <span class="showcase-carousel__edge-label">Next</span>
+            <strong>${nextScene.name}</strong>
+          </div>
+        </div>
+      </div>
+      <button class="showcase-carousel__nav" type="button" data-direction="next" aria-label="Next scene">
+        <span aria-hidden="true">›</span>
+      </button>
+    </div>
+  `;
+}
+
 function buildShowcaseFeature(scene) {
   const preview = getScenePreviewMedia(scene);
-  const detailTags = [scene.dataset, `Iter ${scene.iteration / 1000}k`, getScenePrimaryTag(scene)];
+  const detailTags = [
+    scene.dataset,
+    `Iter ${scene.iteration / 1000}k`,
+    scene.imageCount ? `${scene.imageCount} images` : "Image count pending",
+  ];
 
   return `
     <div class="showcase-stage__media-shell" id="showcase-media-frame">
@@ -396,7 +1169,7 @@ function buildShowcaseFeature(scene) {
           .map(
             (tag, index) => `
               <div class="showcase-stage__fact">
-                <span>${index === 0 ? "Dataset" : index === 1 ? "Checkpoint" : "Focus"}</span>
+                <span>${index === 0 ? "Dataset" : index === 1 ? "Checkpoint" : "Images"}</span>
                 <strong>${tag}</strong>
               </div>
             `,
@@ -481,7 +1254,7 @@ function buildSceneGallery(scene) {
 
 function buildSceneHighlightPanel(scene) {
   return `
-    <section class="panel code-panel code-panel--expanded">
+    <section class="panel code-panel code-panel--expanded workspace-detail-panel">
       <h2>场景亮点</h2>
       <div class="scene-info-card scene-info-card--highlight">
         <div class="scene-info-block">
@@ -639,10 +1412,12 @@ function updateShowcaseFeature(scene) {
 
   featureRoot.innerHTML = buildShowcaseFeature(scene);
   setupParallax();
+}
 
-  document.querySelectorAll(".showcase-scene-card").forEach((card) => {
-    card.classList.toggle("is-active", card.dataset.sceneId === scene.id);
-  });
+function updateShowcaseCarousel(scene, scenes) {
+  const carouselRoot = document.getElementById("showcase-carousel-shell");
+  if (!carouselRoot || !scene) return;
+  carouselRoot.innerHTML = buildShowcaseCarousel(scene, scenes);
 }
 
 function updateWorkflowStage(index, steps = HOME_PIPELINE_STEPS) {
@@ -665,17 +1440,25 @@ function updateWorkflowStage(index, steps = HOME_PIPELINE_STEPS) {
 }
 
 function setupShowcaseInteraction(scenes) {
-  const showcaseGrid = document.getElementById("showcase-grid");
-  if (!showcaseGrid) return;
+  const carouselShell = document.getElementById("showcase-carousel-shell");
+  if (!carouselShell) return;
 
-  showcaseGrid.addEventListener("click", (event) => {
-    const card = event.target.closest(".showcase-scene-card");
-    if (!card) return;
+  carouselShell.addEventListener("click", (event) => {
+    const navButton = event.target.closest(".showcase-carousel__nav");
+    if (!navButton) return;
 
-    const scene = scenes.find((item) => item.id === card.dataset.sceneId);
+    const carousel = document.getElementById("showcase-carousel");
+    const currentIndex = Number(carousel?.dataset.activeIndex || 0);
+    const direction = navButton.dataset.direction;
+    const nextIndex =
+      direction === "prev"
+        ? (currentIndex - 1 + scenes.length) % scenes.length
+        : (currentIndex + 1) % scenes.length;
+    const scene = scenes[nextIndex];
     if (!scene) return;
 
     updateShowcaseFeature(scene);
+    updateShowcaseCarousel(scene, scenes);
   });
 }
 
@@ -810,133 +1593,649 @@ function setupHistoryInteraction() {
   });
 }
 
-// ---- 绑定工作台任务交互模拟 ----
-function setupWorkspaceInteraction(selectedScene) {
-  // 1. 高级参数折叠
-  const advancedToggle = document.getElementById('advanced-toggle');
-  const advancedPanel = document.getElementById('advanced-panel');
-  if (advancedToggle && advancedPanel) {
-    advancedToggle.addEventListener('click', () => {
-      const isHidden = advancedPanel.style.display === 'none';
-      advancedPanel.style.display = isHidden ? 'block' : 'none';
-      advancedToggle.innerText = isHidden ? '收起高级参数' : '展开高级参数';
+function getTimelineItemStatusClass(status = "pending") {
+  return `timeline-item is-${status}`;
+}
+
+function buildWorkspaceTimelineMarkup(modeConfig, progressIndex = -1) {
+  const steps = modeConfig.timelineSteps
+    .map((step, index) => {
+      const status = progressIndex < 0 ? "pending" : index < progressIndex ? "success" : index === progressIndex ? "running" : "pending";
+      return `
+        <div class="${getTimelineItemStatusClass(status)}">
+          <div class="timeline-marker"></div>
+          <div class="timeline-content">
+            <strong>${step.title}</strong>
+            <p>${step.detail}</p>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+
+  return `
+    <h2>阶段时间线</h2>
+    <div class="timeline">${steps}</div>
+  `;
+}
+
+function buildWorkspaceParameterField(item, value) {
+  const inputId = `workspace-param-${item.key}`;
+  const recommendation = item.recommendation ? `<span class="workspace-params-item__recommend">${item.recommendation}</span>` : "";
+
+  let control = "";
+  if (item.type === "select") {
+    control = `
+      <select class="workspace-params-input" id="${inputId}" data-param-key="${item.key}">
+        ${item.options
+          .map((option) => `<option value="${option}" ${String(value) === String(option) ? "selected" : ""}>${option}</option>`)
+          .join("")}
+      </select>
+    `;
+  } else if (item.type === "checkbox") {
+    control = `
+      <label class="workspace-params-toggle">
+        <input type="checkbox" id="${inputId}" data-param-key="${item.key}" ${value ? "checked" : ""} />
+        <span>${value ? "已开启" : "已关闭"}</span>
+      </label>
+    `;
+  } else {
+    const min = item.min != null ? `min="${item.min}"` : "";
+    const max = item.max != null ? `max="${item.max}"` : "";
+    const step = item.step != null ? `step="${item.step}"` : "";
+    const type = item.type === "text" ? "text" : "number";
+    control = `
+      <input
+        class="workspace-params-input"
+        id="${inputId}"
+        data-param-key="${item.key}"
+        type="${type}"
+        value="${value}"
+        ${min}
+        ${max}
+        ${step}
+      />
+    `;
+  }
+
+  return `
+    <div class="workspace-params-item">
+      <div class="workspace-params-item__meta">
+        <label class="workspace-params-item__label" for="${inputId}">${item.label}</label>
+        ${recommendation}
+      </div>
+      <div class="workspace-params-item__control">
+        ${control}
+      </div>
+    </div>
+  `;
+}
+
+function buildWorkspaceParameterSnapshot(modeKey = "images", parameterValues = {}, context = {}) {
+  return getWorkspaceParameterPreset(modeKey, context).map((group) => ({
+    section: group.title,
+    tag: group.badge,
+    items: group.items.map((item) => ({
+      key: item.key,
+      label: item.label,
+      value: parameterValues[item.key],
+      recommendation: item.recommendation || "",
+    })),
+  }));
+}
+
+function buildWorkspaceParamsMarkup(modeKey = "images", parameterValues = {}, canStartTask = false, context = {}) {
+  const groups = getWorkspaceParameterPreset(modeKey, context);
+  const groupMarkup = groups
+    .map(
+      (group) => `
+        <div class="workspace-params-group">
+          <div class="workspace-params-group__head">
+            <strong>${group.title}</strong>
+            <span>${group.badge}</span>
+          </div>
+          <div class="workspace-params-grid">
+            ${group.items.map((item) => buildWorkspaceParameterField(item, parameterValues[item.key] ?? item.defaultValue)).join("")}
+          </div>
+        </div>
+      `,
+    )
+    .join("");
+
+  return `
+    <h2>重建参数</h2>
+    <div class="workspace-params-body">${groupMarkup}</div>
+    <div class="workspace-params-actions">
+      <button
+        type="button"
+        class="workspace-params-submit"
+        id="workspace-start-training"
+        ${canStartTask ? "" : "disabled"}
+      >
+        开始重建
+      </button>
+    </div>
+  `;
+}
+
+function buildWorkspaceJobPayload({ modeConfig, sceneName, selectionSummary, status = "idle", progressIndex = -1, parameterValues = {}, parameterContext = {} }) {
+  const currentStep = progressIndex >= 0 ? modeConfig.timelineSteps[progressIndex]?.title || null : null;
+
+  return {
+    file: modeConfig.jobTitle,
+    input_mode: modeConfig.key,
+    scene: sceneName,
+    status,
+    selection: selectionSummary || "尚未选择输入源",
+    current_step: currentStep,
+    parameter_profile: buildWorkspaceParameterSnapshot(modeConfig.key, parameterValues, parameterContext),
+    workflow: modeConfig.timelineSteps.map((step, index) => ({
+      index: index + 1,
+      title: step.title,
+      detail: step.detail,
+      state: progressIndex < 0 ? "pending" : index < progressIndex ? "success" : index === progressIndex ? "running" : "pending",
+    })),
+  };
+}
+
+function setWorkspaceJobPreview({ modeConfig, sceneName, selectionSummary, status = "idle", progressIndex = -1, logBadgeText = "", parameterValues = {}, parameterContext = {} }) {
+  const codeBlock = document.getElementById("json-log-content");
+  const logBadge = document.getElementById("log-status-badge");
+  if (codeBlock) {
+    codeBlock.textContent = JSON.stringify(
+      buildWorkspaceJobPayload({
+        modeConfig,
+        sceneName,
+        selectionSummary,
+        status,
+        progressIndex,
+        parameterValues,
+        parameterContext,
+      }),
+      null,
+      2,
+    );
+  }
+
+  if (logBadge) {
+    const badgeClass =
+      status === "success"
+        ? "status-dot--success"
+        : status === "running"
+          ? "status-dot--running"
+          : status === "failed"
+            ? "status-dot--failed"
+            : "status-dot--queued";
+    logBadge.innerHTML = `<span class="status-dot ${badgeClass}"></span> ${
+      logBadgeText || (status === "running" ? "正在处理" : status === "success" ? "任务完成" : status === "failed" ? "输入检查失败" : "等待任务启动")
+    }`;
+  }
+}
+
+function isImageFile(file) {
+  return file?.type?.startsWith("image/") || /\.(png|jpe?g|webp|bmp|tiff?)$/i.test(file?.name || "");
+}
+
+function isVideoFile(file) {
+  return file?.type?.startsWith("video/") || /\.(mp4|mov|avi|mkv|webm|m4v)$/i.test(file?.name || "");
+}
+
+function hasColmapStructure(files = []) {
+  const normalized = files.map((file) => (file.webkitRelativePath || file.name || "").replaceAll("\\", "/").toLowerCase());
+  const hasCameras = normalized.some((path) => path.includes("sparse/0/cameras.bin") || path.endsWith("cameras.bin") || path.includes("sparse/0/cameras.txt"));
+  const hasImages = normalized.some((path) => path.includes("sparse/0/images.bin") || path.endsWith("images.bin") || path.includes("sparse/0/images.txt"));
+  const hasPoints = normalized.some((path) => path.includes("sparse/0/points3d.bin") || path.endsWith("points3d.bin") || path.includes("sparse/0/points3d.txt"));
+  return hasCameras && hasImages && hasPoints;
+}
+
+function isColmapImageDirName(name = "") {
+  return /^images(?:[_-]?\d+)?$/i.test(name) || name.toLowerCase() === "images";
+}
+
+function detectColmapImageDirs(files = []) {
+  const found = new Map();
+
+  files.forEach((file) => {
+    if (!isImageFile(file)) return;
+    const relativePath = (file.webkitRelativePath || file.name || "").replaceAll("\\", "/");
+    const parts = relativePath.split("/").filter(Boolean);
+    const dirName = parts.slice(0, -1).find((part) => isColmapImageDirName(part));
+    if (!dirName) return;
+    found.set(dirName.toLowerCase(), dirName);
+  });
+
+  return Array.from(found.values()).sort((left, right) => left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" }));
+}
+
+function analyzeColmapInput(files = []) {
+  const imageDirs = detectColmapImageDirs(files);
+  const relativeSamples = files.map((file) => file.webkitRelativePath || file.name || "").filter(Boolean);
+  const rootName = relativeSamples[0]?.split("/")[0] || files[0]?.name || "未命名目录";
+
+  return {
+    rootName,
+    hasSparse: hasColmapStructure(files),
+    imageDirs,
+  };
+}
+
+function summarizeSelectedInput(modeKey, files = []) {
+  if (!files.length) return "尚未选择输入源";
+
+  if (modeKey === "video") {
+    return `已选择视频：${files[0]?.name || "未命名文件"}`;
+  }
+
+  const relativeSamples = files.map((file) => file.webkitRelativePath || file.name || "").filter(Boolean);
+  const rootName = relativeSamples[0]?.split("/")[0] || files[0]?.name || "未命名目录";
+
+  if (modeKey === "colmap") {
+    const analysis = analyzeColmapInput(files);
+    if (!analysis.hasSparse) {
+      return `目录 ${rootName} 缺少 sparse/0 关键结构`;
+    }
+    if (!analysis.imageDirs.length) {
+      return `目录 ${rootName} 缺少可用图像目录（images / images_2 / images_4 / images_8）`;
+    }
+    return `已选择 COLMAP 工程：${rootName} · 检测到 ${analysis.imageDirs.length} 个图像目录`;
+  }
+
+  const imageCount = files.filter(isImageFile).length;
+  return `已选择图片目录：${rootName} · ${imageCount} 张图片`;
+}
+
+function readWorkspaceParamControlValue(target) {
+  if (target instanceof HTMLInputElement) {
+    if (target.type === "checkbox") return target.checked;
+    if (target.type === "number") return target.value === "" ? "" : Number(target.value);
+  }
+  return target.value;
+}
+
+async function readAllDirectoryEntries(entry) {
+  if (!entry) return [];
+  if (entry.isFile) {
+    return new Promise((resolve) => {
+      entry.file((file) => {
+        Object.defineProperty(file, "webkitRelativePath", {
+          configurable: true,
+          value: entry.fullPath?.replace(/^\//, "") || file.name,
+        });
+        resolve([file]);
+      });
     });
   }
 
-  // 2. 中间 Viewer/Log Tabs 切换
-  const tabViewer = document.getElementById('tab-viewer');
-  const tabLog = document.getElementById('tab-log');
-  const viewStage = document.getElementById('view-stage');
-  const logStage = document.getElementById('log-stage');
-  const timelinePanel = document.getElementById('timeline-panel');
+  if (!entry.isDirectory) return [];
+
+  const reader = entry.createReader();
+  const entries = [];
+
+  async function readChunk() {
+    return new Promise((resolve) => {
+      reader.readEntries(async (chunk) => {
+        if (!chunk.length) {
+          resolve();
+          return;
+        }
+        entries.push(...chunk);
+        await readChunk();
+        resolve();
+      });
+    });
+  }
+
+  await readChunk();
+  const nested = await Promise.all(entries.map((child) => readAllDirectoryEntries(child)));
+  return nested.flat();
+}
+
+async function collectDropzoneFiles(event) {
+  const items = Array.from(event.dataTransfer?.items || []);
+  const entries = items
+    .map((item) => (typeof item.webkitGetAsEntry === "function" ? item.webkitGetAsEntry() : null))
+    .filter(Boolean);
+
+  if (entries.length) {
+    const files = await Promise.all(entries.map((entry) => readAllDirectoryEntries(entry)));
+    return files.flat();
+  }
+
+  return Array.from(event.dataTransfer?.files || []);
+}
+
+// ---- 绑定工作台任务交互模拟 ----
+function setupWorkspaceInteraction(selectedScene) {
+  const workspaceState = {
+    mode: "images",
+    modeActivated: false,
+    selectedFiles: [],
+    selectionSummary: "尚未选择输入源",
+    paramValues: getWorkspaceDefaultParamValues("images"),
+    colmapImageDirs: [],
+    jobStatus: "idle",
+    progressIndex: -1,
+    logBadgeText: "图片目录模式待命",
+    simulationTimer: null,
+  };
+
+  // 1. 中间 Viewer/Log Tabs 切换
+  const tabViewer = document.getElementById("tab-viewer");
+  const tabLog = document.getElementById("tab-log");
+  const viewStage = document.getElementById("view-stage");
+  const logStage = document.getElementById("log-stage");
+  const timelinePanel = document.getElementById("timeline-panel");
+  const paramsPanel = document.getElementById("workspace-params-panel");
+  const detailPanels = document.querySelectorAll(".workspace-detail-panel");
+  const segmentButtons = Array.from(document.querySelectorAll(".segment[data-input-mode]"));
+  const inputLabel = document.getElementById("workspace-input-label");
+  const dropzone = document.querySelector(".upload-dropzone");
+  const dropzoneTitle = document.getElementById("upload-dropzone-title");
+  const dropzoneHint = document.getElementById("upload-dropzone-hint");
+  const dropzoneStatus = document.getElementById("upload-dropzone-status");
+  const folderInput = document.getElementById("workspace-folder-input");
+  const videoInput = document.getElementById("workspace-video-input");
+
+  function getWorkspaceParameterContext() {
+    return {
+      colmapImageDirs: workspaceState.colmapImageDirs,
+    };
+  }
+
+  function canStartWorkspaceTask() {
+    return workspaceState.modeActivated && validateSelection(workspaceState.selectedFiles).ok;
+  }
 
   function setTimelineVisible(visible) {
     if (!timelinePanel) return;
-    timelinePanel.style.display = visible ? 'block' : 'none';
+    timelinePanel.style.display = visible ? "block" : "none";
   }
 
-  function resetTimeline() {
-    const items = document.querySelectorAll('.timeline-item');
-    items.forEach((item) => {
-      item.classList.remove('is-success', 'is-running');
-      item.classList.add('is-pending');
+  function setParamsVisible(visible) {
+    if (!paramsPanel) return;
+    paramsPanel.style.display = visible ? "block" : "none";
+  }
+
+  function setWorkspaceDetailPanelsHidden(hidden) {
+    detailPanels.forEach((panel) => panel.classList.toggle("is-hidden-by-input-mode", hidden));
+  }
+
+  function renderTimeline(modeKey, progressIndex = -1) {
+    const modeConfig = getWorkspaceInputMode(modeKey);
+    if (!timelinePanel) return;
+    timelinePanel.innerHTML = buildWorkspaceTimelineMarkup(modeConfig, progressIndex);
+  }
+
+  function renderParams(modeKey) {
+    if (!paramsPanel) return;
+    paramsPanel.innerHTML = buildWorkspaceParamsMarkup(modeKey, workspaceState.paramValues, canStartWorkspaceTask(), getWorkspaceParameterContext());
+  }
+
+  function syncJobPreview(overrides = {}) {
+    workspaceState.jobStatus = overrides.status ?? workspaceState.jobStatus;
+    workspaceState.progressIndex = overrides.progressIndex ?? workspaceState.progressIndex;
+    workspaceState.logBadgeText = overrides.logBadgeText ?? workspaceState.logBadgeText;
+
+    setWorkspaceJobPreview({
+      modeConfig: getWorkspaceInputMode(workspaceState.mode),
+      sceneName: selectedScene.id,
+      selectionSummary: workspaceState.selectionSummary,
+      status: workspaceState.jobStatus,
+      progressIndex: workspaceState.progressIndex,
+      logBadgeText: workspaceState.logBadgeText,
+      parameterValues: workspaceState.paramValues,
+      parameterContext: getWorkspaceParameterContext(),
     });
   }
 
-  setTimelineVisible(false);
-  resetTimeline();
+  function clearSimulationTimer() {
+    if (workspaceState.simulationTimer) {
+      window.clearInterval(workspaceState.simulationTimer);
+      workspaceState.simulationTimer = null;
+    }
+  }
 
   function switchTab(mode) {
     if (!tabViewer || !tabLog) return;
-    if (mode === 'viewer') {
-      tabViewer.classList.add('active');
-      tabLog.classList.remove('active');
-      viewStage.style.display = 'block';
-      logStage.style.display = 'none';
+    if (mode === "viewer") {
+      tabViewer.classList.add("active");
+      tabLog.classList.remove("active");
+      viewStage.style.display = "block";
+      logStage.style.display = "none";
     } else {
-      tabLog.classList.add('active');
-      tabViewer.classList.remove('active');
-      logStage.style.display = 'flex';
-      viewStage.style.display = 'none';
+      tabLog.classList.add("active");
+      tabViewer.classList.remove("active");
+      logStage.style.display = "flex";
+      viewStage.style.display = "none";
     }
   }
 
-  if (tabViewer) tabViewer.addEventListener('click', () => switchTab('viewer'));
-  if (tabLog) tabLog.addEventListener('click', () => switchTab('log'));
+  function updateDropzoneState(text, tone = "idle") {
+    if (!dropzoneStatus) return;
+    dropzoneStatus.textContent = text;
+    dropzoneStatus.dataset.tone = tone;
+  }
+
+  function applyMode(modeKey, triggeredByUser = false) {
+    const modeConfig = getWorkspaceInputMode(modeKey);
+    workspaceState.mode = modeConfig.key;
+    workspaceState.modeActivated = triggeredByUser ? true : workspaceState.modeActivated;
+    workspaceState.colmapImageDirs = [];
+    workspaceState.paramValues = getWorkspaceDefaultParamValues(modeConfig.key, workspaceState.paramValues, getWorkspaceParameterContext());
+    workspaceState.jobStatus = "idle";
+    workspaceState.progressIndex = -1;
+    workspaceState.logBadgeText = `${modeConfig.label}模式待命`;
+    clearSimulationTimer();
+
+    segmentButtons.forEach((button) => {
+      button.classList.toggle("active", button.dataset.inputMode === modeConfig.key);
+    });
+
+    if (inputLabel) inputLabel.textContent = modeConfig.inputLabel;
+    if (dropzoneTitle) dropzoneTitle.textContent = modeConfig.dropzoneTitle;
+    if (dropzoneHint) dropzoneHint.textContent = modeConfig.dropzoneHint;
+    if (folderInput) folderInput.accept = "";
+    if (videoInput) videoInput.accept = modeConfig.pickerKind === "video" ? modeConfig.accept : "video/*";
+
+    workspaceState.selectedFiles = [];
+    workspaceState.selectionSummary = "尚未选择输入源";
+    updateDropzoneState("尚未选择输入源", "idle");
+    renderParams(modeConfig.key);
+    syncJobPreview();
+
+    if (triggeredByUser) {
+      setWorkspaceDetailPanelsHidden(true);
+      setTimelineVisible(true);
+      setParamsVisible(true);
+      renderTimeline(modeConfig.key, -1);
+    }
+  }
+
+  function validateSelection(files = []) {
+    const modeConfig = getWorkspaceInputMode(workspaceState.mode);
+    if (!files.length) {
+      return { ok: false, files: [], message: "未检测到有效输入。", tone: "error" };
+    }
+
+    if (modeConfig.key === "video") {
+      const videoFiles = files.filter(isVideoFile);
+      if (videoFiles.length !== 1 || files.length !== 1) {
+        return { ok: false, files: [], message: "当前模式只接受单个视频文件。", tone: "error" };
+      }
+      return { ok: true, files: [videoFiles[0]], message: `已选择视频：${videoFiles[0].name}`, tone: "success" };
+    }
+
+    if (modeConfig.key === "colmap") {
+      const analysis = analyzeColmapInput(files);
+      if (!analysis.hasSparse) {
+        return { ok: false, files, message: "当前目录缺少 sparse/0 的关键 COLMAP 结构。", tone: "error", meta: analysis };
+      }
+      if (!analysis.imageDirs.length) {
+        return { ok: false, files, message: "当前目录缺少可用图像目录（images / images_2 / images_4 / images_8）。", tone: "error", meta: analysis };
+      }
+      return { ok: true, files, message: summarizeSelectedInput("colmap", files), tone: "success", meta: analysis };
+    }
+
+    const imageFiles = files.filter(isImageFile);
+    if (!imageFiles.length) {
+      return { ok: false, files: [], message: "当前模式需要图片文件夹。", tone: "error" };
+    }
+    return { ok: true, files: imageFiles, message: summarizeSelectedInput("images", imageFiles), tone: "success" };
+  }
+
+  function commitSelection(files = []) {
+    const modeConfig = getWorkspaceInputMode(workspaceState.mode);
+    const validation = validateSelection(files);
+    workspaceState.selectedFiles = validation.files;
+    workspaceState.colmapImageDirs = validation.meta?.imageDirs || [];
+    workspaceState.paramValues = getWorkspaceDefaultParamValues(workspaceState.mode, workspaceState.paramValues, getWorkspaceParameterContext());
+    workspaceState.selectionSummary = validation.message;
+    updateDropzoneState(validation.message, validation.tone);
+    syncJobPreview({
+      status: validation.ok ? "idle" : "failed",
+      progressIndex: -1,
+      logBadgeText: validation.ok ? `${modeConfig.label}模式待命` : "输入检查未通过",
+    });
+    renderParams(modeConfig.key);
+    return validation.ok;
+  }
+
+  async function handleDropSelection(event) {
+    event.preventDefault();
+    dropzone?.classList.remove("is-dragover");
+    const files = await collectDropzoneFiles(event);
+    commitSelection(files);
+  }
+
+  function openPickerForMode() {
+    const modeConfig = getWorkspaceInputMode(workspaceState.mode);
+    if (modeConfig.pickerKind === "video") {
+      videoInput?.click();
+      return;
+    }
+    folderInput?.click();
+  }
+
+  function startTaskSimulation() {
+    const modeConfig = getWorkspaceInputMode(workspaceState.mode);
+    const totalSteps = modeConfig.timelineSteps.length;
+
+    clearSimulationTimer();
+    switchTab("log");
+    setTimelineVisible(true);
+    renderTimeline(modeConfig.key, 0);
+    syncJobPreview({
+      status: "running",
+      progressIndex: 0,
+      logBadgeText: `第 1/${totalSteps} 阶段: ${modeConfig.timelineSteps[0].title}`,
+    });
+
+    let activeIndex = 0;
+    workspaceState.simulationTimer = window.setInterval(() => {
+      activeIndex += 1;
+      if (activeIndex >= totalSteps) {
+        clearSimulationTimer();
+        renderTimeline(modeConfig.key, totalSteps);
+        syncJobPreview({
+          status: "success",
+          progressIndex: totalSteps,
+          logBadgeText: "任务完成",
+        });
+        return;
+      }
+
+      renderTimeline(modeConfig.key, activeIndex);
+      syncJobPreview({
+        status: "running",
+        progressIndex: activeIndex,
+        logBadgeText: `第 ${activeIndex + 1}/${totalSteps} 阶段: ${modeConfig.timelineSteps[activeIndex].title}`,
+      });
+    }, 1500);
+  }
+
+  function attemptStartTraining() {
+    if (!workspaceState.modeActivated) return;
+
+    const isReady = commitSelection(workspaceState.selectedFiles);
+    if (!isReady) return;
+
+    const confirmed = window.confirm(
+      `请确认当前 ${getWorkspaceInputMode(workspaceState.mode).label} 的超参数已经设置无误。确认后将开始模拟训练流程。`,
+    );
+    if (!confirmed) return;
+
+    setWorkspaceDetailPanelsHidden(true);
+    setTimelineVisible(true);
+    setParamsVisible(true);
+    startTaskSimulation();
+  }
+
+  if (tabViewer) tabViewer.addEventListener("click", () => switchTab("viewer"));
+  if (tabLog) tabLog.addEventListener("click", () => switchTab("log"));
 
   // 3. 表单控件交互补充 (Segment切换 & Upload点击)
-  const segments = document.querySelectorAll('.segment');
-  segments.forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      segments.forEach(s => s.classList.remove('active'));
-      e.target.classList.add('active');
+  segmentButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      applyMode(button.dataset.inputMode || "images", true);
     });
   });
 
-  const dropzone = document.querySelector('.upload-dropzone');
   if (dropzone) {
-    dropzone.addEventListener('click', () => {
-      alert('已触发系统文件选择器（占位演示）');
+    dropzone.addEventListener("click", openPickerForMode);
+    dropzone.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      dropzone.classList.add("is-dragover");
+    });
+    dropzone.addEventListener("dragleave", () => {
+      dropzone.classList.remove("is-dragover");
+    });
+    dropzone.addEventListener("drop", (event) => {
+      void handleDropSelection(event);
     });
   }
+
+  folderInput?.addEventListener("change", () => {
+    commitSelection(Array.from(folderInput.files || []));
+    folderInput.value = "";
+  });
+
+  videoInput?.addEventListener("change", () => {
+    commitSelection(Array.from(videoInput.files || []));
+    videoInput.value = "";
+  });
+
+  paramsPanel?.addEventListener("input", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) return;
+    const key = target.dataset.paramKey;
+    if (!key) return;
+
+    workspaceState.paramValues[key] = readWorkspaceParamControlValue(target);
+    syncJobPreview();
+  });
+
+  paramsPanel?.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) return;
+    const key = target.dataset.paramKey;
+    if (!key) return;
+
+    workspaceState.paramValues[key] = readWorkspaceParamControlValue(target);
+    syncJobPreview();
+  });
 
   setupSceneGallery(selectedScene);
 
-  // 4. 模拟“开始重建”流程
-  const btnSubmit = document.getElementById('btn-submit-task');
-  if (btnSubmit) {
-    btnSubmit.addEventListener('click', () => {
-      // 切换到日志视图
-      switchTab('log');
-      setTimelineVisible(true);
-      resetTimeline();
-      updateTimeline(0, 'running');
-      
-      // 更新状态徽章
-      const logBadge = document.getElementById('log-status-badge');
-      if (logBadge) logBadge.innerHTML = '<span class="status-dot status-dot--running"></span> 正在处理 · 第 1/4 阶段: 准备上传';
+  paramsPanel?.addEventListener("click", (event) => {
+    const button = event.target.closest("#workspace-start-training");
+    if (!button) return;
+    if (button.hasAttribute("disabled")) return;
+    attemptStartTraining();
+  });
 
-      // 模拟滚动输出 JSON 日志
-      const codeBlock = document.getElementById('json-log-content');
-      if (codeBlock) {
-        codeBlock.innerHTML = '{\n  "status": "running",\n  "message": "Initializing task..."\n}';
-        
-        let step = 0;
-        const interval = setInterval(() => {
-          step++;
-          if (step === 1) {
-            codeBlock.innerHTML += '\n{\n  "stage": "upload",\n  "progress": "100%"\n}';
-            updateTimeline(0, 'success');
-            updateTimeline(1, 'running');
-            if(logBadge) logBadge.innerHTML = '<span class="status-dot status-dot--running"></span> 第 2/4 阶段: 输入预处理';
-          } else if (step === 2) {
-            codeBlock.innerHTML += '\n{\n  "stage": "sfm",\n  "progress": "Extracting features..."\n}';
-          } else if (step === 3) {
-            codeBlock.innerHTML += '\n{\n  "stage": "sfm",\n  "progress": "COLMAP sparse reconstruction..."\n}';
-            updateTimeline(1, 'success');
-            updateTimeline(2, 'running');
-            if(logBadge) logBadge.innerHTML = '<span class="status-dot status-dot--running"></span> 第 3/4 阶段: GS 训练';
-          } else if (step === 4) {
-            codeBlock.innerHTML += '\n{\n  "stage": "training",\n  "iteration": 7000,\n  "loss": 0.0412\n}';
-            updateTimeline(2, 'success');
-            updateTimeline(3, 'running');
-            if(logBadge) logBadge.innerHTML = '<span class="status-dot status-dot--running"></span> 第 4/4 阶段: 结果渲染';
-          } else {
-            clearInterval(interval);
-            updateTimeline(3, 'success');
-            if(logBadge) logBadge.innerHTML = '<span class="status-dot status-dot--success"></span> 任务完成';
-          }
-        }, 1500);
-      }
-    });
-  }
-
-  function updateTimeline(index, status) {
-    const items = document.querySelectorAll('.timeline-item');
-    if (items[index]) {
-      items[index].className = `timeline-item is-${status}`;
-    }
-  }
+  applyMode("images", false);
+  setTimelineVisible(false);
+  setParamsVisible(false);
 }
 
 function setupSceneGallery(scene) {
@@ -1030,15 +2329,27 @@ export function renderHomePage(scenes) {
         <div class="method-layout">
           <div class="section-header section-header--centered method-header">
             <p class="section-kicker">METHOD OVERVIEW</p>
-            <h2>更轻的 3DGS：从渲染显存到结果文件</h2>
+            <h2>更轻的 3DGS，先从显存优化开始。</h2>
             <p>FocusGS 结合 MEGS² 显存优化与轻量化高斯资产保存，在保证三维重建质量的同时，进一步降低运行负担与结果体积。</p>
           </div>
           <div class="method-visual-shell" data-parallax-speed="0.06" data-parallax-max="42">
             ${buildMethodVisual()}
           </div>
           <div class="method-summary">
-            <p>FocusGS 以 3D Gaussian Splatting 作为三维重建与渲染主线，并在此基础上结合两类关键优化。首先，在重建表示层面，我们引入 MEGS² 的思路，用更轻量的 Spherical Gaussian 颜色表示替代传统 SH，并结合统一剪枝策略，同时压缩 Gaussian primitive 的数量和单个 primitive 的参数量，从而降低训练与渲染过程中的显存压力。其次，在结果管理与展示层面，我们对训练得到的 Gaussian 结果进一步进行轻量化保存与格式转换，将原始 splat / 点云资产组织为更适合网页传输、快速加载与预览的轻量格式。基于这两部分设计，FocusGS 不仅关注 3DGS 的重建质量，也强调其在有限硬件条件下的运行效率和展示效率，从而形成一条从高质量重建到轻量化发布的完整技术链路。</p>
-            <p class="method-summary__closing">指标导向上，FocusGS 的目标是在尽量保持 PSNR / SSIM / LPIPS 表现的同时，进一步压低显存占用、结果体积与网页加载成本。</p>
+            <p>FocusGS 以 3D Gaussian Splatting 作为三维重建与渲染主线，并重点吸收 MEGS² 的核心思想来优化显存开销。在表示层面，MEGS² 不再沿用传统 3DGS 中较重的 SH 颜色表示，而是引入更轻量的 Spherical Gaussian 颜色建模方式，用更紧凑的参数结构描述视角相关外观，从源头压缩单个 Gaussian primitive 的存储负担。在结构层面，MEGS² 进一步提出统一剪枝思路，不再把“删掉哪些 Gaussian”与“删掉哪些颜色参数”割裂处理，而是用一套更一致的策略同时约束 primitive 数量与其内部参数规模，从而在训练阶段和渲染阶段都显著缓解显存压力。对 FocusGS 而言，这样的收益并不只是模型更省显存，更关键的是它让 3DGS 在有限硬件条件下也能保持较稳定的重建质量与可训练性，在 PSNR、SSIM、LPIPS 等指标尽量保持竞争力的前提下，把效率优化真正落实到三维重建流程本身。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="asset-save-section">
+        <div class="method-layout">
+          <div class="section-header section-header--centered asset-save-header">
+            <p class="section-kicker">LIGHTWEIGHT ASSET STORAGE</p>
+            <h2>更轻的 3DGS，结果文件也会轻量化储存。</h2>
+            <p>FocusGS 在训练完成之后，继续面向展示与发布环节整理 Gaussian 结果，将原始重建输出转换为更适合网页传输、快速加载与浏览器预览的轻量资产形态。</p>
+          </div>
+          <div class="asset-save-grid">
+            ${buildLightweightAssetCards()}
           </div>
         </div>
       </section>
@@ -1047,23 +2358,23 @@ export function renderHomePage(scenes) {
         <div class="section-header section-header--centered">
           <p class="section-kicker">Scene Showcase</p>
           <h2>九个场景，持续扩展的 3DGS 演示入口。</h2>
-          <p>从预训练结果到后续新实验场景，FocusGS 让场景展示区保持可新增、可切换、可进入工作台的连续体验。</p>
+          <p class="showcase-section__subtitle">从预训练结果到后续新实验场景，FocusGS 让场景展示区保持可新增、可切换、可进入工作台的连续体验。</p>
         </div>
         <div class="showcase-shell">
           <div class="showcase-stage" id="showcase-feature" data-parallax-speed="0.08" data-parallax-max="56">
             ${featuredScene ? buildShowcaseFeature(featuredScene) : ""}
           </div>
-          <div class="showcase-grid" id="showcase-grid">
-            ${buildShowcaseSceneCards(scenes, featuredScene?.id || "")}
+          <div class="showcase-carousel-shell" id="showcase-carousel-shell">
+            ${featuredScene ? buildShowcaseCarousel(featuredScene, scenes) : ""}
           </div>
         </div>
       </section>
 
       <section class="workflow-section" id="workflow">
-        <div class="section-header section-header--left">
+        <div class="section-header section-header--centered">
           <p class="section-kicker">Workflow</p>
-          <h2>从输入到回看，工作流应该是动态可读的。</h2>
-          <p>四个单元沿着真实使用链路推进：准备输入、开展训练、进入展示、回看历史，让首页本身也像一个轻量演示台。</p>
+          <h2>三种输入入口，对应三条清晰的重建路径。</h2>
+          <p>无论是图片目录、单个视频，还是已处理好的 COLMAP 工程，FocusGS 都会把它们收束到统一的重建训练、结果导出与历史记录流程里。</p>
         </div>
         <div class="workflow-shell" data-active-index="0" data-parallax-speed="0.07" data-parallax-max="52">
           <div class="workflow-tabs" id="workflow-tabs">
@@ -1170,8 +2481,9 @@ export function renderWorkspacePage(
           <h2>创建任务</h2>
           
           <div class="segmented-control">
-            <button class="segment active">图片目录</button>
-            <button class="segment">单个视频</button>
+            <button class="segment active" type="button" data-input-mode="images">图片目录</button>
+            <button class="segment" type="button" data-input-mode="video">单个视频</button>
+            <button class="segment" type="button" data-input-mode="colmap">COLMAP</button>
           </div>
 
           <div class="form-group">
@@ -1180,30 +2492,17 @@ export function renderWorkspacePage(
           </div>
 
           <div class="form-group">
-            <label>选择一个图片目录</label>
+            <label id="workspace-input-label">选择一个图片目录</label>
             <div class="upload-dropzone">
                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-               <p>拖拽图片文件夹到这里，或点击选择目录。</p>
-               <span>支持任何图像格式</span>
+               <p id="upload-dropzone-title">拖拽图片文件夹到这里，或点击选择目录。</p>
+               <span id="upload-dropzone-hint">支持任何图像格式</span>
+               <small id="upload-dropzone-status" class="upload-dropzone__status">尚未选择输入源</small>
             </div>
+            <input id="workspace-folder-input" type="file" hidden webkitdirectory directory multiple />
+            <input id="workspace-video-input" type="file" hidden accept="video/*" />
           </div>
 
-          <label class="checkbox-row">
-            <input type="checkbox" checked />
-            <span>输入为竖屏拍摄时旋转图像</span>
-          </label>
-
-          <div class="advanced-section">
-            <button type="button" class="btn btn--ghost w-100" id="advanced-toggle">收起高级参数</button>
-            <div id="advanced-panel" style="display:block; margin-top:12px;">
-              <div class="form-group">
-                <label>batch_size</label>
-                <input type="number" class="input-field" value="1" />
-              </div>
-            </div>
-          </div>
-
-          <button class="btn btn--primary w-100" id="btn-submit-task" style="margin-top: 16px;">开始重建</button>
         </section>
 
         <!-- 历史任务面板 -->
@@ -1256,39 +2555,14 @@ export function renderWorkspacePage(
         <!-- 阶段时间线 -->
         <section class="panel timeline-panel" id="timeline-panel" style="display: none;">
           <h2>阶段时间线</h2>
-          <div class="timeline">
-             <div class="timeline-item is-pending">
-                <div class="timeline-marker"></div>
-                <div class="timeline-content">
-                   <strong>准备上传</strong>
-                   <p>等待任务启动</p>
-                </div>
-             </div>
-             <div class="timeline-item is-pending">
-                <div class="timeline-marker"></div>
-                <div class="timeline-content">
-                   <strong>输入预处理</strong>
-                   <p>待执行 · COLMAP 稀疏建图</p>
-                </div>
-             </div>
-             <div class="timeline-item is-pending">
-                <div class="timeline-marker"></div>
-                <div class="timeline-content">
-                   <strong>GS 训练</strong>
-                   <p>待执行</p>
-                </div>
-             </div>
-             <div class="timeline-item is-pending">
-                <div class="timeline-marker"></div>
-                <div class="timeline-content">
-                   <strong>结束渲染</strong>
-                   <p>待执行</p>
-                </div>
-             </div>
-          </div>
+          <div class="timeline"></div>
         </section>
 
-        <section class="panel info-panel">
+        <section class="panel workspace-params-panel" id="workspace-params-panel" style="display: none;">
+          <h2>重建参数</h2>
+        </section>
+
+        <section class="panel info-panel workspace-detail-panel">
           <h2>场景简介</h2>
           <p class="desc">${selectedScene.description}</p>
           <div class="sys-item" style="margin-top:12px;">
@@ -1298,7 +2572,7 @@ export function renderWorkspacePage(
           <div class="tag-row">${buildTagList(selectedScene.tags)}</div>
         </section>
 
-        <section class="panel metrics-panel">
+        <section class="panel metrics-panel workspace-detail-panel">
           <h2>指标 (Iteration ${selectedScene.iteration})</h2>
           <div class="metrics-grid">
              <div class="metric-item">
