@@ -178,7 +178,7 @@ const HOME_METHOD_POINTS = [
     copy: "保留 Gaussian Splatting 在高保真场景表达与实时浏览上的优势，聚焦真实三维重建成果的展示。",
   },
   {
-    title: "引入 MEGS-2 的低显存优化思路",
+    title: "引入 MEGS² 的低显存优化思路",
     copy: "通过更节省显存的策略，让训练与部署不再被高资源门槛完全限制，适配有限硬件条件。",
   },
   {
@@ -203,7 +203,7 @@ const HOME_PIPELINE_STEPS = [
     step: "02",
     label: "Reconstruction Training",
     title: "重建训练",
-    summary: "以 3D Gaussian Splatting 为核心，并引入 MEGS-2 的显存优化能力推进模型训练。",
+    summary: "以 3D Gaussian Splatting 为核心，并引入 MEGS² 的显存优化能力推进模型训练。",
     note: "核心目标是在有限显存下仍然保持高质量三维重建的可训练性。",
     mediaSrc: "",
     visual: "train",
@@ -373,7 +373,7 @@ function buildMethodVisual() {
       <div class="method-visual__frame" data-parallax-speed="0.09" data-parallax-max="56">
         <div class="method-visual__header">
           <span>FocusGS / Method Overview</span>
-          <strong>3DGS + MEGS-2</strong>
+          <strong>3DGS + MEGS²</strong>
         </div>
         <div class="method-visual__diagram">
           <div class="method-node method-node--input">
@@ -400,7 +400,7 @@ function buildMethodVisual() {
             <strong>Higher VRAM Pressure</strong>
           </div>
           <div class="method-compare-card method-compare-card--accent">
-            <span>MEGS-2 Strategy</span>
+            <span>MEGS² Strategy</span>
             <div class="method-compare-bar method-compare-bar--low">
               <i></i>
             </div>
@@ -1081,14 +1081,14 @@ export function renderHomePage(scenes) {
         <div class="hero-bg-glow" data-parallax-speed="0.28" data-parallax-max="88"></div>
         <div class="hero-content">
           <p class="eyebrow">FOCUSGS FRAMEWORK</p>
-          <h1 class="hero-title">更省显存，更快走进 3DGS</h1>
-          <p class="hero-subtitle">FocusGS 聚焦 3D Gaussian Splatting，并引入 MEGS-2 的内存优化能力，让高质量三维重建在有限硬件上也能顺畅运行。</p>
+          <h1 class="hero-title">更省显存，更轻量走进 3DGS</h1>
+          <p class="hero-subtitle">FocusGS 聚焦 3D Gaussian Splatting，引入 MEGS² 的显存优化能力，并结合轻量化高斯资产存储，让高质量三维重建在有限硬件上也能顺畅运行、快速加载与展示。</p>
           <div class="hero-demo-strip">
             ${buildHeroDemoStrip()}
           </div>
           <div class="hero-highlights">
             <span>3DGS Core</span>
-            <span>MEGS-2 Strategy</span>
+            <span>MEGS² Strategy</span>
             <span>${sceneCount} Scenes Ready</span>
           </div>
           <div class="hero-actions">
@@ -1102,8 +1102,8 @@ export function renderHomePage(scenes) {
         <div class="method-layout">
           <div class="method-copy">
             <p class="section-kicker">Method Overview</p>
-            <h2>把 3DGS 主线、MEGS-2 优化与 Web 展示放在同一条链路里。</h2>
-            <p class="method-lead">FocusGS 不是单纯的 viewer 包装层，而是围绕高质量三维重建建立的一套完整叙事：前端展示关注 3DGS 的最终可见效果，方法侧则借助 MEGS-2 的思路降低显存压力。</p>
+            <h2>把 3DGS 主线、MEGS² 优化与 Web 展示放在同一条链路里。</h2>
+            <p class="method-lead">FocusGS 不是单纯的 viewer 包装层，而是围绕高质量三维重建建立的一套完整叙事：前端展示关注 3DGS 的最终可见效果，方法侧则借助 MEGS² 的思路降低显存压力。</p>
             <div class="method-badges">
               ${buildMethodBadges()}
             </div>
