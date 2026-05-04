@@ -52,68 +52,150 @@ html, body {
 #app {
   width: 100%;
   height: 100%;
-  overflow: hidden;
 }
 
-.page-transition-root {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
+.page-transition {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  pointer-events: none;
+  opacity: 0;
 }
 
-.page-transition-viewport {
-  position: relative;
-  width: 100%;
-  min-height: 100vh;
-  overflow: hidden;
-  isolation: isolate;
-}
-
-.page-layer {
+.page-transition__veil,
+.page-transition__pulse,
+.page-transition__label {
   position: absolute;
   inset: 0;
-  width: 100%;
-  min-height: 100vh;
-  overflow: hidden;
-  background: var(--bg-home);
-  will-change: transform;
-  transition: transform 560ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.page-layer--workspace {
-  background: var(--bg-studio);
+.page-transition__veil {
+  background:
+    radial-gradient(circle at 50% 42%, rgba(125, 211, 252, 0.18) 0%, rgba(59, 130, 246, 0.1) 22%, rgba(15, 23, 42, 0.9) 82%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.86) 0%, rgba(2, 6, 23, 0.96) 100%);
+  opacity: 0;
 }
 
-.page-layer--current,
-.page-layer--active {
-  transform: translateX(0);
+.page-transition__pulse {
+  inset: 50% auto auto 50%;
+  width: 24rem;
+  height: 24rem;
+  margin-left: -12rem;
+  margin-top: -12rem;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(125, 211, 252, 0.4) 0%, rgba(59, 130, 246, 0.1) 32%, rgba(15, 23, 42, 0) 72%);
+  filter: blur(14px);
+  opacity: 0;
+  transform: scale(0.88);
 }
 
-.page-layer--enter-from-right {
-  transform: translateX(100%);
+.page-transition__label {
+  inset: auto 0 14vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  letter-spacing: 0.42em;
+  text-transform: uppercase;
+  color: rgba(226, 232, 240, 0.72);
+  opacity: 0;
 }
 
-.page-layer--enter-from-left {
-  transform: translateX(-100%);
+.page-transition.is-active,
+.page-transition.is-enter {
+  opacity: 1;
 }
 
-.page-layer--exit-to-left {
-  transform: translateX(-100%);
+.page-transition.is-active .page-transition__veil {
+  animation: page-transition-veil-out 980ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
-.page-layer--exit-to-right {
-  transform: translateX(100%);
+.page-transition.is-active .page-transition__pulse {
+  animation: page-transition-pulse-out 980ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
-.page-layer[aria-hidden="true"] {
-  pointer-events: none;
+.page-transition.is-active .page-transition__label {
+  animation: page-transition-label-out 980ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.page-transition.is-enter .page-transition__veil {
+  animation: page-transition-veil-in 980ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.page-transition.is-enter .page-transition__pulse {
+  animation: page-transition-pulse-in 980ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.page-transition.is-enter .page-transition__label {
+  animation: page-transition-label-in 980ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes page-transition-veil-out {
+  0% { opacity: 0; }
+  22% { opacity: 1; }
+  100% { opacity: 1; }
+}
+
+@keyframes page-transition-pulse-out {
+  0% {
+    opacity: 0;
+    transform: scale(0.88);
+  }
+  28% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0.76;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes page-transition-label-out {
+  0%, 12% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  28%, 100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes page-transition-veil-in {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes page-transition-pulse-in {
+  0% {
+    opacity: 0.76;
+    transform: scale(1.08);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.18);
+  }
+}
+
+@keyframes page-transition-label-in {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .page-layer,
+  .page-transition__veil,
+  .page-transition__pulse,
+  .page-transition__label,
   .page-switch__thumb,
   .page-switch__item {
+    animation-duration: 1ms !important;
     transition-duration: 1ms !important;
   }
 }

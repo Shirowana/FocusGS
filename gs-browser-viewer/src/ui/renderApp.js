@@ -1045,14 +1045,7 @@ function setupSceneGallery(scene) {
 // ============================================================
 // 长首页渲染：展示项目亮点、预览图、画廊
 // ============================================================
-export function activateHomePage(scenes) {
-  setupParallax();
-  setupShowcaseInteraction(scenes);
-  setupWorkflowInteraction(HOME_PIPELINE_STEPS);
-}
-
-export function renderHomePage(scenes, mountTarget = document.getElementById("app"), options = {}) {
-  const { deferSetup = false } = options;
+export function renderHomePage(scenes) {
   document.title = "FocusGS | 3D Gaussian Splatting Showcase";
   stopWorkflowAutoAdvance();
   stopGpuSummaryPolling();
@@ -1061,7 +1054,7 @@ export function renderHomePage(scenes, mountTarget = document.getElementById("ap
   const sceneCount = scenes.length;
   const activeWorkflowStep = HOME_PIPELINE_STEPS[0];
 
-  mountTarget.innerHTML = `
+  document.getElementById("app").innerHTML = `
     <div class="landing-page">
       <nav class="home-nav">
         <div class="home-nav__surface">
@@ -1181,11 +1174,11 @@ export function renderHomePage(scenes, mountTarget = document.getElementById("ap
     </div>
   `;
 
-  if (!deferSetup) {
-    setTimeout(() => {
-      activateHomePage(scenes);
-    }, 0);
-  }
+  setTimeout(() => {
+    setupParallax();
+    setupShowcaseInteraction(scenes);
+    setupWorkflowInteraction(HOME_PIPELINE_STEPS);
+  }, 0);
 }
 
 // ============================================================
@@ -1194,24 +1187,15 @@ export function renderHomePage(scenes, mountTarget = document.getElementById("ap
 // @param {Object} selectedScene 当前场景
 // @param {Array} history 该场景的历史任务列表
 // ============================================================
-export function activateWorkspacePage(selectedScene) {
-  setupHistoryInteraction();
-  setupWorkspaceInteraction(selectedScene);
-  setupGpuSummary();
-}
-
 export function renderWorkspacePage(
   scenes,
   selectedScene,
   history = [],
-  mountTarget = document.getElementById("app"),
-  options = {},
 ) {
-  const { deferSetup = false } = options;
   stopWorkflowAutoAdvance();
   document.title = `${selectedScene.name} | FocusGS Studio`;
 
-  mountTarget.innerHTML = `
+  document.getElementById("app").innerHTML = `
     <div class="layout studio-layout">
       <!-- 顶部栏 -->
       <header class="topbar">
@@ -1416,10 +1400,9 @@ export function renderWorkspacePage(
     </div>
   `;
 
-  // DOM 渲染完毕后绑定交互事件
-  if (!deferSetup) {
-    setTimeout(() => {
-      activateWorkspacePage(selectedScene);
-    }, 0);
-  }
+  setTimeout(() => {
+    setupHistoryInteraction();
+    setupWorkspaceInteraction(selectedScene);
+    setupGpuSummary();
+  }, 0);
 }
