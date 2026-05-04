@@ -14,6 +14,8 @@ import assetCardAImage from "../../figures/A_transparent.png";
 import assetCardBImage from "../../figures/B_transparent.png";
 import assetCardCImage from "../../figures/C_transparent.png";
 
+const ACTIVE_WORKSPACE_JOB_STORAGE_KEY = "focusgs-active-workspace-job";
+
 let parallaxScrollListener = null;
 let parallaxResizeListener = null;
 let parallaxFrameId = 0;
@@ -1300,6 +1302,86 @@ function buildPerformanceSummary() {
   `;
 }
 
+function stripAnsiText(text = "") {
+  return String(text).replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "");
+}
+
+function getLogTailExcerpt(logs = "", lineCount = 8) {
+  return stripAnsiText(logs)
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(-lineCount)
+    .join("\n");
+}
+
+function persistActiveWorkspaceJobId(jobId) {
+  try {
+    if (jobId) {
+      localStorage.setItem(ACTIVE_WORKSPACE_JOB_STORAGE_KEY, String(jobId));
+    } else {
+      localStorage.removeItem(ACTIVE_WORKSPACE_JOB_STORAGE_KEY);
+    }
+  } catch {
+    // ignore storage failures
+  }
+}
+
+function readPersistedActiveWorkspaceJobId() {
+  try {
+    return localStorage.getItem(ACTIVE_WORKSPACE_JOB_STORAGE_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function buildTrainingProgressPanel() {
+  return `
+    <div class="training-progress-card" id="training-progress-card">
+      <div class="training-progress-card__head">
+        <div class="training-progress-card__title-wrap">
+          <span class="training-progress-card__eyebrow">REAL-TIME TRAINING</span>
+          <strong id="training-progress-phase">等待任务启动</strong>
+        </div>
+        <span class="training-progress-card__percent" id="training-progress-percent">0%</span>
+      </div>
+      <div class="training-progress-card__bar">
+        <span id="training-progress-bar"></span>
+      </div>
+      <div class="training-progress-card__meta">
+        <span id="training-progress-iteration">0 / 30000 iter</span>
+        <span id="training-progress-state">尚未提交任务</span>
+      </div>
+    </div>
+  `;
+}
+
+function buildTrainingRuntimePanel() {
+  return `
+    <section class="panel training-runtime-panel" id="training-runtime-panel" style="display: none;">
+      <h2>训练实时状态</h2>
+      <div class="training-runtime-grid">
+        <div class="training-runtime-item">
+          <span>当前损失</span>
+          <strong id="training-runtime-loss">--</strong>
+          <small>实时读取训练输出中的 Loss。</small>
+        </div>
+        <div class="training-runtime-item">
+          <span>当前速度</span>
+          <strong id="training-runtime-speed">--</strong>
+          <small>按迭代速度估算训练吞吐。</small>
+        </div>
+        <div class="training-runtime-item">
+          <span>预计剩余</span>
+          <strong id="training-runtime-eta">--</strong>
+          <small>来自训练进度条中的剩余时间。</small>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 function stopGpuSummaryPolling() {
   if (gpuSummaryPollTimer) {
     clearInterval(gpuSummaryPollTimer);
@@ -1619,14 +1701,15 @@ function buildWorkspaceTimelineMarkup(modeConfig, progressIndex = -1) {
   `;
 }
 
-function buildWorkspaceParameterField(item, value) {
+function buildWorkspaceParameterField(item, value, isLocked = false) {
   const inputId = `workspace-param-${item.key}`;
   const recommendation = item.recommendation ? `<span class="workspace-params-item__recommend">${item.recommendation}</span>` : "";
+  const disabledAttr = isLocked ? "disabled" : "";
 
   let control = "";
   if (item.type === "select") {
     control = `
-      <select class="workspace-params-input" id="${inputId}" data-param-key="${item.key}">
+      <select class="workspace-params-input" id="${inputId}" data-param-key="${item.key}" ${disabledAttr}>
         ${item.options
           .map((option) => `<option value="${option}" ${String(value) === String(option) ? "selected" : ""}>${option}</option>`)
           .join("")}
@@ -1634,8 +1717,8 @@ function buildWorkspaceParameterField(item, value) {
     `;
   } else if (item.type === "checkbox") {
     control = `
-      <label class="workspace-params-toggle">
-        <input type="checkbox" id="${inputId}" data-param-key="${item.key}" ${value ? "checked" : ""} />
+      <label class="workspace-params-toggle ${isLocked ? "is-disabled" : ""}">
+        <input type="checkbox" id="${inputId}" data-param-key="${item.key}" ${value ? "checked" : ""} ${disabledAttr} />
         <span>${value ? "已开启" : "已关闭"}</span>
       </label>
     `;
@@ -1651,6 +1734,7 @@ function buildWorkspaceParameterField(item, value) {
         data-param-key="${item.key}"
         type="${type}"
         value="${value}"
+        ${disabledAttr}
         ${min}
         ${max}
         ${step}
@@ -1684,7 +1768,7 @@ function buildWorkspaceParameterSnapshot(modeKey = "images", parameterValues = {
   }));
 }
 
-function buildWorkspaceParamsMarkup(modeKey = "images", parameterValues = {}, canStartTask = false, context = {}) {
+function buildWorkspaceParamsMarkup(modeKey = "images", parameterValues = {}, canStartTask = false, context = {}, isLocked = false, isCollapsed = false) {
   const groups = getWorkspaceParameterPreset(modeKey, context);
   const groupMarkup = groups
     .map(
@@ -1695,7 +1779,7 @@ function buildWorkspaceParamsMarkup(modeKey = "images", parameterValues = {}, ca
             <span>${group.badge}</span>
           </div>
           <div class="workspace-params-grid">
-            ${group.items.map((item) => buildWorkspaceParameterField(item, parameterValues[item.key] ?? item.defaultValue)).join("")}
+            ${group.items.map((item) => buildWorkspaceParameterField(item, parameterValues[item.key] ?? item.defaultValue, isLocked)).join("")}
           </div>
         </div>
       `,
@@ -1703,8 +1787,11 @@ function buildWorkspaceParamsMarkup(modeKey = "images", parameterValues = {}, ca
     .join("");
 
   return `
-    <h2>重建参数</h2>
-    <div class="workspace-params-body">${groupMarkup}</div>
+    <div class="workspace-params-header">
+      <h2>重建参数</h2>
+      <button type="button" class="workspace-params-collapse" id="workspace-params-collapse">${isCollapsed ? "展开" : "收起"}</button>
+    </div>
+    <div class="workspace-params-body ${isCollapsed ? "is-collapsed" : ""}">${groupMarkup}</div>
     <div class="workspace-params-actions">
       <button
         type="button"
@@ -1714,14 +1801,22 @@ function buildWorkspaceParamsMarkup(modeKey = "images", parameterValues = {}, ca
       >
         开始重建
       </button>
+      <button
+        type="button"
+        class="workspace-params-submit"
+        id="workspace-cancel-training"
+        disabled
+      >
+        中断重建
+      </button>
     </div>
   `;
 }
 
-function buildWorkspaceJobPayload({ modeConfig, sceneName, selectionSummary, status = "idle", progressIndex = -1, parameterValues = {}, parameterContext = {} }) {
+function buildWorkspaceJobPayload({ modeConfig, sceneName, selectionSummary, status = "idle", progressIndex = -1, parameterValues = {}, parameterContext = {}, runtimeMeta = {} }) {
   const currentStep = progressIndex >= 0 ? modeConfig.timelineSteps[progressIndex]?.title || null : null;
 
-  return {
+  const payload = {
     file: modeConfig.jobTitle,
     input_mode: modeConfig.key,
     scene: sceneName,
@@ -1736,9 +1831,15 @@ function buildWorkspaceJobPayload({ modeConfig, sceneName, selectionSummary, sta
       state: progressIndex < 0 ? "pending" : index < progressIndex ? "success" : index === progressIndex ? "running" : "pending",
     })),
   };
+
+  if (runtimeMeta && Object.keys(runtimeMeta).length) {
+    payload.runtime = runtimeMeta;
+  }
+
+  return payload;
 }
 
-function setWorkspaceJobPreview({ modeConfig, sceneName, selectionSummary, status = "idle", progressIndex = -1, logBadgeText = "", parameterValues = {}, parameterContext = {} }) {
+function setWorkspaceJobPreview({ modeConfig, sceneName, selectionSummary, status = "idle", progressIndex = -1, logBadgeText = "", parameterValues = {}, parameterContext = {}, runtimeMeta = {} }) {
   const codeBlock = document.getElementById("json-log-content");
   const logBadge = document.getElementById("log-status-badge");
   if (codeBlock) {
@@ -1751,6 +1852,7 @@ function setWorkspaceJobPreview({ modeConfig, sceneName, selectionSummary, statu
         progressIndex,
         parameterValues,
         parameterContext,
+        runtimeMeta,
       }),
       null,
       2,
@@ -1763,11 +1865,26 @@ function setWorkspaceJobPreview({ modeConfig, sceneName, selectionSummary, statu
         ? "status-dot--success"
         : status === "running"
           ? "status-dot--running"
+          : status === "cancelling"
+            ? "status-dot--cancelled"
+          : status === "cancelled"
+            ? "status-dot--cancelled"
           : status === "failed"
             ? "status-dot--failed"
             : "status-dot--queued";
     logBadge.innerHTML = `<span class="status-dot ${badgeClass}"></span> ${
-      logBadgeText || (status === "running" ? "正在处理" : status === "success" ? "任务完成" : status === "failed" ? "输入检查失败" : "等待任务启动")
+      logBadgeText
+        || (status === "running"
+          ? "正在处理"
+          : status === "cancelling"
+            ? "正在中断"
+          : status === "cancelled"
+            ? "任务已中断"
+            : status === "success"
+              ? "任务完成"
+              : status === "failed"
+                ? "输入检查失败"
+                : "等待任务启动")
     }`;
   }
 }
@@ -1909,7 +2026,10 @@ function setupWorkspaceInteraction(selectedScene) {
   const workspaceState = {
     mode: "images",
     modeActivated: false,
+    sceneGuideCollapsed: false,
+    paramsCollapsed: false,
     selectedFiles: [],
+    selectionMeta: {},
     selectionSummary: "尚未选择输入源",
     paramValues: getWorkspaceDefaultParamValues("images"),
     colmapImageDirs: [],
@@ -1917,6 +2037,14 @@ function setupWorkspaceInteraction(selectedScene) {
     progressIndex: -1,
     logBadgeText: "图片目录模式待命",
     simulationTimer: null,
+    pollTimer: null,
+    fakeProgressTimer: null,
+    activeJobId: null,
+    isSubmitting: false,
+    runtimeMeta: {},
+    submissionAbortController: null,
+    previewIteration: null,
+    previewReady: false,
   };
 
   // 1. 中间 Viewer/Log Tabs 切换
@@ -1924,6 +2052,10 @@ function setupWorkspaceInteraction(selectedScene) {
   const tabLog = document.getElementById("tab-log");
   const viewStage = document.getElementById("view-stage");
   const logStage = document.getElementById("log-stage");
+  const sceneGuidePanel = document.getElementById("scene-guide-panel");
+  const sceneGuideToggle = document.getElementById("scene-guide-toggle");
+  const workspaceViewerOverlay = document.getElementById("workspace-viewer-overlay");
+  const workspaceViewerExpandBtn = document.getElementById("workspace-expand-scene-guide");
   const timelinePanel = document.getElementById("timeline-panel");
   const paramsPanel = document.getElementById("workspace-params-panel");
   const detailPanels = document.querySelectorAll(".workspace-detail-panel");
@@ -1933,6 +2065,7 @@ function setupWorkspaceInteraction(selectedScene) {
   const dropzoneTitle = document.getElementById("upload-dropzone-title");
   const dropzoneHint = document.getElementById("upload-dropzone-hint");
   const dropzoneStatus = document.getElementById("upload-dropzone-status");
+  const sceneNameInput = document.getElementById("workspace-scene-name");
   const folderInput = document.getElementById("workspace-folder-input");
   const videoInput = document.getElementById("workspace-video-input");
 
@@ -1940,6 +2073,23 @@ function setupWorkspaceInteraction(selectedScene) {
     return {
       colmapImageDirs: workspaceState.colmapImageDirs,
     };
+  }
+
+  function getWorkspaceSceneName() {
+    return sceneNameInput?.value?.trim() || selectedScene.id;
+  }
+
+  function hasActiveWorkspaceJob() {
+    return Boolean(workspaceState.activeJobId);
+  }
+
+  function isWorkspaceParamsLocked() {
+    return workspaceState.isSubmitting || hasActiveWorkspaceJob() || workspaceState.jobStatus === "cancelling";
+  }
+
+  function clearActiveWorkspaceJob() {
+    workspaceState.activeJobId = null;
+    persistActiveWorkspaceJobId("");
   }
 
   function canStartWorkspaceTask() {
@@ -1960,6 +2110,34 @@ function setupWorkspaceInteraction(selectedScene) {
     detailPanels.forEach((panel) => panel.classList.toggle("is-hidden-by-input-mode", hidden));
   }
 
+  function syncSceneGuidePanel() {
+    if (!sceneGuidePanel) return;
+    sceneGuidePanel.classList.toggle("is-collapsed", workspaceState.sceneGuideCollapsed);
+    if (sceneGuideToggle) {
+      sceneGuideToggle.textContent = workspaceState.sceneGuideCollapsed ? "展开" : "收起";
+      sceneGuideToggle.setAttribute("aria-expanded", String(!workspaceState.sceneGuideCollapsed));
+    }
+  }
+
+  function syncWorkspaceViewerMode() {
+    if (!workspaceViewerOverlay) return;
+    const showOverlay = workspaceState.modeActivated && workspaceState.sceneGuideCollapsed && !workspaceState.previewReady;
+    workspaceViewerOverlay.classList.toggle("is-visible", showOverlay);
+    if (viewStage) {
+      viewStage.classList.toggle("is-task-mode", showOverlay);
+      viewStage.classList.toggle("is-preview-live", workspaceState.previewReady);
+    }
+  }
+
+  function setSceneGuideCollapsed(nextCollapsed, reason = "manual") {
+    workspaceState.sceneGuideCollapsed = Boolean(nextCollapsed);
+    syncSceneGuidePanel();
+    syncWorkspaceViewerMode();
+    if (reason === "manual" && !workspaceState.sceneGuideCollapsed) {
+      setWorkspaceDetailPanelsHidden(false);
+    }
+  }
+
   function renderTimeline(modeKey, progressIndex = -1) {
     const modeConfig = getWorkspaceInputMode(modeKey);
     if (!timelinePanel) return;
@@ -1968,30 +2146,318 @@ function setupWorkspaceInteraction(selectedScene) {
 
   function renderParams(modeKey) {
     if (!paramsPanel) return;
-    paramsPanel.innerHTML = buildWorkspaceParamsMarkup(modeKey, workspaceState.paramValues, canStartWorkspaceTask(), getWorkspaceParameterContext());
+    paramsPanel.innerHTML = buildWorkspaceParamsMarkup(
+      modeKey,
+      workspaceState.paramValues,
+      canStartWorkspaceTask(),
+      getWorkspaceParameterContext(),
+      isWorkspaceParamsLocked(),
+      workspaceState.paramsCollapsed,
+    );
+    updateStartButtonState();
+  }
+
+  function updateTrainingRuntimePanel(snapshot = {}) {
+    const panel = document.getElementById("training-runtime-panel");
+    const lossEl = document.getElementById("training-runtime-loss");
+    const speedEl = document.getElementById("training-runtime-speed");
+    const etaEl = document.getElementById("training-runtime-eta");
+    if (!panel || !lossEl || !speedEl || !etaEl) return;
+
+    const runtimeMeta = snapshot.runtimeMeta || {};
+    const trainingProgress = snapshot.trainingProgress || runtimeMeta.trainingProgress || {};
+    const shouldShow = Boolean(snapshot.status && snapshot.status !== "idle");
+
+    panel.style.display = shouldShow ? "block" : "none";
+    if (!shouldShow) return;
+
+    const loss = trainingProgress.loss ?? runtimeMeta.progress_loss;
+    const speed = trainingProgress.speed ?? runtimeMeta.progress_speed;
+    const eta = trainingProgress.eta ?? runtimeMeta.progress_eta;
+
+    lossEl.textContent = Number.isFinite(Number(loss)) ? Number(loss).toFixed(7) : "--";
+    speedEl.textContent = speed ? String(speed) : snapshot.status === "running" ? "等待首个迭代" : "--";
+    etaEl.textContent = eta ? String(eta) : snapshot.status === "running" ? "计算中" : "--";
+  }
+
+  function syncTrainingViewerPreview(snapshot = {}) {
+    const preview = snapshot.preview || snapshot.runtimeMeta?.preview || null;
+    const overlay = document.getElementById("workspace-viewer-overlay");
+    const overlayTitle = overlay?.querySelector("h3");
+    const overlayText = overlay?.querySelector(".workspace-viewer-overlay__body");
+    const previewMeta = document.getElementById("workspace-viewer-preview-meta");
+    const previewBadge = document.getElementById("viewer-preview-badge");
+    const previewIterationLabel = document.getElementById("viewer-preview-iteration");
+    const viewStageEl = document.getElementById("view-stage");
+
+    if (!preview?.url) {
+      workspaceState.previewReady = false;
+      workspaceState.previewIteration = null;
+      if (previewMeta) previewMeta.textContent = "等待首个可预览的 checkpoint...";
+      if (previewBadge) previewBadge.classList.remove("is-visible", "is-refreshing");
+      if (previewIterationLabel) previewIterationLabel.textContent = "iteration --";
+      if (overlayTitle) overlayTitle.textContent = "训练预览准备中";
+      if (overlayText) overlayText.textContent = "MEGS² 会在保存 checkpoint 后生成可预览结果。首个可视化快照出现后，这里会自动切换。";
+      syncWorkspaceViewerMode();
+      return;
+    }
+
+    const isNewPreview = workspaceState.previewIteration !== preview.iteration;
+    workspaceState.previewReady = true;
+    workspaceState.previewIteration = preview.iteration;
+    if (previewMeta) {
+      previewMeta.textContent = `当前预览：iteration ${preview.iteration}`;
+    }
+    if (previewIterationLabel) {
+      previewIterationLabel.textContent = `iteration ${preview.iteration}`;
+    }
+    if (previewBadge) {
+      previewBadge.classList.add("is-visible");
+    }
+
+    if (overlayTitle) overlayTitle.textContent = "训练中实时预览";
+    if (overlayText) overlayText.textContent = "当前 Viewer 已切换到最新保存的训练结果。后续每次保存新的 checkpoint，这里都会自动刷新。";
+
+    if (isNewPreview && previewBadge) {
+      previewBadge.classList.remove("is-refreshing");
+      void previewBadge.offsetWidth;
+      previewBadge.classList.add("is-refreshing");
+    }
+    if (isNewPreview && viewStageEl) {
+      viewStageEl.classList.remove("is-preview-refresh");
+      void viewStageEl.offsetWidth;
+      viewStageEl.classList.add("is-preview-refresh");
+      window.setTimeout(() => {
+        viewStageEl.classList.remove("is-preview-refresh");
+      }, 520);
+    }
+
+    if (window.focusGSRuntimeStats?.lastPreviewUrl === preview.url) return;
+    window.focusGSRuntimeStats.lastPreviewUrl = preview.url;
+    window.focusGSStudioLoadPreview?.(preview.url, preview.iteration);
+    syncWorkspaceViewerMode();
+  }
+
+  function updateTrainingProgressCard(snapshot = {}) {
+    const card = document.getElementById("training-progress-card");
+    const phaseEl = document.getElementById("training-progress-phase");
+    const percentEl = document.getElementById("training-progress-percent");
+    const barEl = document.getElementById("training-progress-bar");
+    const iterationEl = document.getElementById("training-progress-iteration");
+    const stateEl = document.getElementById("training-progress-state");
+    if (!card || !phaseEl || !percentEl || !barEl || !iterationEl || !stateEl) return;
+
+    const runtimeMeta = snapshot.runtimeMeta || {};
+    const trainingProgress = snapshot.trainingProgress || {};
+    const totalSteps = getWorkspaceInputMode(workspaceState.mode).timelineSteps.length;
+    const totalIterations =
+      Number(trainingProgress.totalIterations)
+      || Number(runtimeMeta.progress_total_iterations)
+      || Number(snapshot.parameterValues?.iterations)
+      || Number(workspaceState.paramValues?.iterations)
+      || 30000;
+
+    let currentIteration =
+      Number(trainingProgress.currentIteration)
+      || Number(runtimeMeta.progress_iteration)
+      || 0;
+    const hasRealIterationProgress = currentIteration > 0;
+
+    let percent = Number(trainingProgress.percent ?? runtimeMeta.progress_percent);
+    if (!hasRealIterationProgress) {
+      percent = Number(runtimeMeta.fake_progress_percent);
+      if (!Number.isFinite(percent)) {
+        percent = runtimeMeta.source_strategy === "local-path" ? 8 : 2;
+      }
+    } else if (!Number.isFinite(percent)) {
+      if (snapshot.status === "success") {
+        percent = 100;
+      } else if (snapshot.status === "running") {
+        const normalizedIndex = snapshot.progressIndex >= 0 ? Math.min(snapshot.progressIndex, Math.max(totalSteps - 1, 0)) : 0;
+        percent = totalSteps > 1 ? Math.round((normalizedIndex / (totalSteps - 1)) * 100) : 0;
+      } else {
+        percent = 0;
+      }
+    }
+
+    if (snapshot.status === "success" && currentIteration <= 0) {
+      currentIteration = totalIterations;
+    }
+
+    const phase =
+      (hasRealIterationProgress ? (trainingProgress.phase || runtimeMeta.progress_phase) : null)
+      || (snapshot.status === "queued" || (snapshot.status === "running" && !hasRealIterationProgress)
+        ? "已检查到COLMAP数据"
+        : snapshot.status === "running"
+          ? "MEGS² 训练"
+          : snapshot.status === "cancelling"
+            ? "正在中断"
+            : snapshot.status === "cancelled"
+              ? "任务已中断"
+              : snapshot.status === "failed"
+                ? "训练失败"
+                : snapshot.status === "success"
+                  ? "训练完成"
+                  : "等待任务启动");
+
+    const stateText =
+      (hasRealIterationProgress ? (trainingProgress.detail || runtimeMeta.progress_detail) : null)
+      || runtimeMeta.fake_progress_label
+      || snapshot.logBadgeText
+      || "等待新的训练任务";
+
+    card.dataset.status = snapshot.status || "idle";
+    phaseEl.textContent = phase;
+    percentEl.textContent = `${Math.max(0, Math.min(100, Math.round(percent)))}%`;
+    barEl.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+    iterationEl.textContent = hasRealIterationProgress
+      ? `${Math.max(0, Math.round(currentIteration))} / ${totalIterations} iter`
+      : "准备训练环境中";
+    stateEl.textContent = stateText;
   }
 
   function syncJobPreview(overrides = {}) {
     workspaceState.jobStatus = overrides.status ?? workspaceState.jobStatus;
     workspaceState.progressIndex = overrides.progressIndex ?? workspaceState.progressIndex;
     workspaceState.logBadgeText = overrides.logBadgeText ?? workspaceState.logBadgeText;
+    workspaceState.runtimeMeta = overrides.runtimeMeta ?? workspaceState.runtimeMeta;
 
     setWorkspaceJobPreview({
       modeConfig: getWorkspaceInputMode(workspaceState.mode),
-      sceneName: selectedScene.id,
+      sceneName: getWorkspaceSceneName(),
       selectionSummary: workspaceState.selectionSummary,
       status: workspaceState.jobStatus,
       progressIndex: workspaceState.progressIndex,
       logBadgeText: workspaceState.logBadgeText,
       parameterValues: workspaceState.paramValues,
       parameterContext: getWorkspaceParameterContext(),
+      runtimeMeta: workspaceState.runtimeMeta,
     });
+    updateTrainingProgressCard({
+      status: workspaceState.jobStatus,
+      progressIndex: workspaceState.progressIndex,
+      logBadgeText: workspaceState.logBadgeText,
+      runtimeMeta: workspaceState.runtimeMeta,
+      parameterValues: workspaceState.paramValues,
+      trainingProgress: workspaceState.runtimeMeta?.trainingProgress || {},
+      logs: workspaceState.runtimeMeta?.log_excerpt || "",
+    });
+    updateTrainingRuntimePanel({
+      status: workspaceState.jobStatus,
+      runtimeMeta: workspaceState.runtimeMeta,
+      trainingProgress: workspaceState.runtimeMeta?.trainingProgress || {},
+    });
+    syncTrainingViewerPreview({
+      status: workspaceState.jobStatus,
+      runtimeMeta: workspaceState.runtimeMeta,
+      preview: workspaceState.runtimeMeta?.preview || null,
+    });
+    const paramsBody = paramsPanel?.querySelector(".workspace-params-body");
+    const shouldRefreshParams =
+      Boolean(paramsBody?.classList.contains("is-collapsed")) !== workspaceState.paramsCollapsed;
+    if (shouldRefreshParams) {
+      renderParams(workspaceState.mode);
+    }
+    updateStartButtonState();
   }
 
   function clearSimulationTimer() {
     if (workspaceState.simulationTimer) {
       window.clearInterval(workspaceState.simulationTimer);
       workspaceState.simulationTimer = null;
+    }
+  }
+
+  function clearFakeProgressTimer() {
+    if (workspaceState.fakeProgressTimer) {
+      window.clearInterval(workspaceState.fakeProgressTimer);
+      workspaceState.fakeProgressTimer = null;
+    }
+  }
+
+  function clearJobPollTimer() {
+    if (workspaceState.pollTimer) {
+      window.clearTimeout(workspaceState.pollTimer);
+      workspaceState.pollTimer = null;
+    }
+  }
+
+  function startFakeQueuedProgress() {
+    clearFakeProgressTimer();
+
+    let fakeProgress = Number(workspaceState.runtimeMeta?.fake_progress_percent);
+    if (!Number.isFinite(fakeProgress) || fakeProgress <= 0) {
+      fakeProgress = 4;
+    }
+
+    workspaceState.runtimeMeta = {
+      ...workspaceState.runtimeMeta,
+      fake_progress_percent: fakeProgress,
+      fake_progress_label: "正在定位本地数据目录",
+    };
+    syncJobPreview();
+
+    workspaceState.fakeProgressTimer = window.setInterval(() => {
+      const hasRealIterationProgress =
+        Number(workspaceState.runtimeMeta?.progress_iteration) > 0
+        || Number(workspaceState.runtimeMeta?.trainingProgress?.currentIteration) > 0;
+
+      if (hasRealIterationProgress) {
+        clearFakeProgressTimer();
+        return;
+      }
+
+      if (
+        !workspaceState.isSubmitting
+        && workspaceState.jobStatus !== "queued"
+        && workspaceState.jobStatus !== "running"
+      ) {
+        clearFakeProgressTimer();
+        return;
+      }
+
+      const nextStep = fakeProgress < 28 ? 6 : fakeProgress < 56 ? 4 : fakeProgress < 78 ? 2.5 : 1.2;
+      fakeProgress = Math.min(92, fakeProgress + nextStep);
+      const fakeLabel =
+        fakeProgress < 24
+          ? "正在定位本地数据目录"
+          : fakeProgress < 52
+            ? "正在检查 COLMAP 结构"
+            : fakeProgress < 80
+              ? "正在准备训练环境"
+              : "正在启动 MEGS² 训练";
+      workspaceState.runtimeMeta = {
+        ...workspaceState.runtimeMeta,
+        fake_progress_percent: Number(fakeProgress.toFixed(1)),
+        fake_progress_label: fakeLabel,
+      };
+      syncJobPreview();
+    }, 420);
+  }
+
+  function updateStartButtonState() {
+    const startButton = paramsPanel?.querySelector("#workspace-start-training");
+    const cancelButton = paramsPanel?.querySelector("#workspace-cancel-training");
+    if (!startButton) return;
+
+    const isReady = workspaceState.modeActivated && validateSelection(workspaceState.selectedFiles).ok;
+    const shouldDisable = !isReady || workspaceState.isSubmitting || hasActiveWorkspaceJob();
+
+    startButton.disabled = shouldDisable;
+    startButton.textContent = workspaceState.isSubmitting
+      ? "正在提交任务..."
+      : hasActiveWorkspaceJob()
+        ? "MEGS² 训练进行中"
+        : "开始重建";
+
+    if (cancelButton) {
+      const canCancel = (workspaceState.isSubmitting || hasActiveWorkspaceJob()) && workspaceState.jobStatus !== "cancelled" && workspaceState.jobStatus !== "failed" && workspaceState.jobStatus !== "success";
+      cancelButton.disabled = !canCancel;
+      cancelButton.textContent = workspaceState.isSubmitting
+        ? "中断上传"
+        : workspaceState.jobStatus === "cancelling"
+          ? "正在中断..."
+          : "中断重建";
     }
   }
 
@@ -2021,11 +2487,17 @@ function setupWorkspaceInteraction(selectedScene) {
     workspaceState.mode = modeConfig.key;
     workspaceState.modeActivated = triggeredByUser ? true : workspaceState.modeActivated;
     workspaceState.colmapImageDirs = [];
+    workspaceState.paramsCollapsed = false;
     workspaceState.paramValues = getWorkspaceDefaultParamValues(modeConfig.key, workspaceState.paramValues, getWorkspaceParameterContext());
     workspaceState.jobStatus = "idle";
     workspaceState.progressIndex = -1;
     workspaceState.logBadgeText = `${modeConfig.label}模式待命`;
+    workspaceState.runtimeMeta = {};
+    workspaceState.submissionAbortController = null;
     clearSimulationTimer();
+    clearJobPollTimer();
+    workspaceState.activeJobId = null;
+    workspaceState.isSubmitting = false;
 
     segmentButtons.forEach((button) => {
       button.classList.toggle("active", button.dataset.inputMode === modeConfig.key);
@@ -2044,7 +2516,7 @@ function setupWorkspaceInteraction(selectedScene) {
     syncJobPreview();
 
     if (triggeredByUser) {
-      setWorkspaceDetailPanelsHidden(true);
+      setSceneGuideCollapsed(true, "auto");
       setTimelineVisible(true);
       setParamsVisible(true);
       renderTimeline(modeConfig.key, -1);
@@ -2087,9 +2559,20 @@ function setupWorkspaceInteraction(selectedScene) {
     const modeConfig = getWorkspaceInputMode(workspaceState.mode);
     const validation = validateSelection(files);
     workspaceState.selectedFiles = validation.files;
+    workspaceState.selectionMeta = validation.meta || {};
     workspaceState.colmapImageDirs = validation.meta?.imageDirs || [];
     workspaceState.paramValues = getWorkspaceDefaultParamValues(workspaceState.mode, workspaceState.paramValues, getWorkspaceParameterContext());
     workspaceState.selectionSummary = validation.message;
+    workspaceState.runtimeMeta =
+      validation.ok && modeConfig.key === "colmap"
+        ? {
+            source_strategy: "local-path",
+            source_hint: validation.meta?.rootName || getWorkspaceSceneName(),
+            detected_image_dirs: workspaceState.colmapImageDirs,
+            selected_image_dir: workspaceState.paramValues.input_image_dir,
+            sparse_root: workspaceState.paramValues.sparse_root,
+          }
+        : {};
     updateDropzoneState(validation.message, validation.tone);
     syncJobPreview({
       status: validation.ok ? "idle" : "failed",
@@ -2153,29 +2636,380 @@ function setupWorkspaceInteraction(selectedScene) {
     }, 1500);
   }
 
+  function getWorkspaceUploadManifest(files = []) {
+    return files.map((file, index) => ({
+      key: `file-${index}`,
+      name: file.name,
+      relativePath: file.webkitRelativePath || file.name,
+      size: file.size,
+    }));
+  }
+
+  function mapServerJobProgress(job) {
+    const totalSteps = getWorkspaceInputMode(workspaceState.mode).timelineSteps.length;
+    const hasRealIterationProgress = Number(job?.trainingProgress?.currentIteration) > 0;
+
+    if (!job) return workspaceState.progressIndex;
+
+    if (job.stage === "queued" || job.stage === "preparing_input") {
+      return 0;
+    }
+
+    if (job.stage === "training_megs2") {
+      return hasRealIterationProgress ? Math.min(1, totalSteps - 1) : 0;
+    }
+
+    if (job.stage === "exporting_result") {
+      return Math.min(2, totalSteps - 1);
+    }
+
+    if (job.stage === "success") {
+      return totalSteps;
+    }
+
+    if (job.stage === "failed") {
+      return workspaceState.progressIndex >= 0 ? workspaceState.progressIndex : 0;
+    }
+
+    if (job.stage === "cancelling" || job.stage === "cancelled") {
+      return workspaceState.progressIndex >= 0 ? workspaceState.progressIndex : 0;
+    }
+
+    return workspaceState.progressIndex;
+  }
+
+  function getLogExcerpt(logs = "") {
+    return getLogTailExcerpt(logs, 12);
+  }
+
+  function applyServerJob(job, logs = "") {
+    const modeConfig = getWorkspaceInputMode(workspaceState.mode);
+    const progressIndex = mapServerJobProgress(job);
+    const hasRealIterationProgress = Number(job?.trainingProgress?.currentIteration) > 0;
+    const preservedFakeProgressPercent = workspaceState.runtimeMeta?.fake_progress_percent;
+    const preservedFakeProgressLabel = workspaceState.runtimeMeta?.fake_progress_label;
+
+    if (job.state === "success" || job.state === "failed" || job.state === "cancelled") {
+      clearActiveWorkspaceJob();
+      workspaceState.isSubmitting = false;
+      clearFakeProgressTimer();
+      clearJobPollTimer();
+    } else if (job.id) {
+      workspaceState.activeJobId = job.id;
+      persistActiveWorkspaceJobId(job.id);
+      if (hasRealIterationProgress) {
+        clearFakeProgressTimer();
+      }
+    }
+
+    renderTimeline(modeConfig.key, progressIndex);
+    syncJobPreview({
+      status: job.state === "running" || job.state === "queued" ? job.state : job.state,
+      progressIndex,
+      logBadgeText: job.message || (job.state === "success" ? "任务完成" : "任务进行中"),
+      runtimeMeta: {
+        job_id: job.id,
+        server_state: job.state,
+        server_stage: job.stage,
+        updated_at: job.updatedAt,
+        workspace_path: job.workspacePath,
+        output_path: job.modelPath,
+        log_path: job.logPath,
+        launcher: job.launcher,
+        selected_image_dir: job.inputImageDir,
+        sparse_root: job.sparseRoot,
+        source_path: job.sourcePath,
+        source_strategy: job.sourceStrategy,
+        exit_code: job.exitCode,
+        error: job.error,
+        progress_phase: job.trainingProgress?.phase,
+        progress_percent: job.trainingProgress?.percent,
+        progress_iteration: job.trainingProgress?.currentIteration,
+        progress_total_iterations: job.trainingProgress?.totalIterations,
+        progress_detail: job.trainingProgress?.detail,
+        progress_loss: job.trainingProgress?.loss,
+        progress_speed: job.trainingProgress?.speed,
+        progress_eta: job.trainingProgress?.eta,
+        trainingProgress: job.trainingProgress || {},
+        fake_progress_percent: hasRealIterationProgress ? undefined : preservedFakeProgressPercent,
+        fake_progress_label: hasRealIterationProgress ? undefined : preservedFakeProgressLabel,
+        preview: job.preview || null,
+        log_tail: Array.isArray(job.logTail) ? job.logTail : [],
+        log_excerpt: logs ? getLogExcerpt(logs) : undefined,
+      },
+    });
+  }
+
+  async function fetchTrainingJob(jobId) {
+    const response = await fetch(`/api/train/${jobId}`, { cache: "no-store" });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok || !payload.job) {
+      throw new Error(payload.message || "读取训练状态失败。");
+    }
+    return payload.job;
+  }
+
+  async function fetchTrainingLogs(jobId) {
+    const response = await fetch(`/api/train/${jobId}/logs`, { cache: "no-store" });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.message || "读取训练日志失败。");
+    }
+    return payload.logs || "";
+  }
+
+  async function restoreActiveWorkspaceJob() {
+    const persistedJobId = readPersistedActiveWorkspaceJobId();
+    if (!persistedJobId) return;
+
+    try {
+      const [job, logs] = await Promise.all([fetchTrainingJob(persistedJobId), fetchTrainingLogs(persistedJobId)]);
+
+      if (!job || ["success", "failed", "cancelled"].includes(job.state)) {
+        persistActiveWorkspaceJobId("");
+        return;
+      }
+
+      workspaceState.modeActivated = true;
+      setWorkspaceDetailPanelsHidden(true);
+      setSceneGuideCollapsed(true, "auto");
+      setTimelineVisible(true);
+      setParamsVisible(true);
+      applyMode(job.mode || "colmap", true);
+      workspaceState.selectionSummary = job.selectionSummary || "已恢复训练任务";
+      workspaceState.paramValues = {
+        ...workspaceState.paramValues,
+        ...(job.parameterValues || {}),
+      };
+      workspaceState.runtimeMeta = {
+        source_strategy: job.sourceStrategy,
+        source_path: job.sourcePath,
+        selected_image_dir: job.inputImageDir,
+        sparse_root: job.sparseRoot,
+        trainingProgress: job.trainingProgress || {},
+        preview: job.preview || null,
+      };
+      workspaceState.paramsCollapsed = true;
+      applyServerJob(job, logs);
+      switchTab("log");
+      scheduleTrainingJobPoll(job.id, 1200);
+    } catch {
+      persistActiveWorkspaceJobId("");
+    }
+  }
+
+  async function cancelTrainingJob(jobId) {
+    const response = await fetch(`/api/train/${jobId}/cancel`, {
+      method: "POST",
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok || !payload.job) {
+      throw new Error(payload.message || "中断任务失败。");
+    }
+    return payload.job;
+  }
+
+  function scheduleTrainingJobPoll(jobId, delay = 2200) {
+    clearJobPollTimer();
+    workspaceState.pollTimer = window.setTimeout(async () => {
+      try {
+        const [job, logs] = await Promise.all([fetchTrainingJob(jobId), fetchTrainingLogs(jobId)]);
+        applyServerJob(job, logs);
+        if (job.state !== "success" && job.state !== "failed" && job.state !== "cancelled") {
+          scheduleTrainingJobPoll(jobId);
+        }
+      } catch (error) {
+        clearActiveWorkspaceJob();
+        workspaceState.isSubmitting = false;
+        clearFakeProgressTimer();
+        syncJobPreview({
+          status: "failed",
+          progressIndex: workspaceState.progressIndex >= 0 ? workspaceState.progressIndex : 0,
+          logBadgeText: error instanceof Error ? error.message : "轮询训练状态失败。",
+          runtimeMeta: {
+            ...workspaceState.runtimeMeta,
+            error: error instanceof Error ? error.message : "轮询训练状态失败。",
+          },
+        });
+      }
+    }, delay);
+  }
+
+  async function startRealColmapTraining() {
+    const modeConfig = getWorkspaceInputMode(workspaceState.mode);
+    const manifest = getWorkspaceUploadManifest(workspaceState.selectedFiles);
+    const formData = new FormData();
+    const submissionAbortController = new AbortController();
+    workspaceState.submissionAbortController = submissionAbortController;
+    const payload = {
+      mode: workspaceState.mode,
+      sceneName: getWorkspaceSceneName(),
+      sceneTags: selectedScene.tags || [],
+      selectionSummary: workspaceState.selectionSummary,
+      parameterValues: workspaceState.paramValues,
+      inputImageDir: workspaceState.paramValues.input_image_dir,
+      sourceStrategy: "local-path",
+      sourceHint: workspaceState.selectionMeta?.rootName || getWorkspaceSceneName(),
+    };
+
+    formData.set("payload", JSON.stringify(payload));
+    formData.set("manifest", JSON.stringify(manifest));
+
+    workspaceState.isSubmitting = true;
+    workspaceState.paramsCollapsed = true;
+    renderTimeline(modeConfig.key, 0);
+    syncJobPreview({
+      status: "queued",
+      progressIndex: 0,
+      logBadgeText: "正在检查输入数据并准备训练环境...",
+      runtimeMeta: {
+        source_strategy: "local-path",
+        source_hint: workspaceState.selectionMeta?.rootName || getWorkspaceSceneName(),
+        upload_count: 0,
+        selected_image_dir: workspaceState.paramValues.input_image_dir,
+        sparse_root: workspaceState.paramValues.sparse_root,
+        trainingProgress: {},
+        fake_progress_percent: 4,
+        fake_progress_label: "正在定位本地数据目录",
+      },
+    });
+    startFakeQueuedProgress();
+
+    try {
+      const response = await fetch("/api/train/create", {
+        method: "POST",
+        body: formData,
+        signal: submissionAbortController.signal,
+      });
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok || !result.ok || !result.job) {
+        throw new Error(result.message || "创建训练任务失败。");
+      }
+
+      workspaceState.isSubmitting = false;
+      workspaceState.activeJobId = result.job.id;
+      persistActiveWorkspaceJobId(result.job.id);
+      clearFakeProgressTimer();
+      workspaceState.submissionAbortController = null;
+      applyServerJob(result.job);
+      switchTab("log");
+      scheduleTrainingJobPoll(result.job.id, 1200);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        workspaceState.isSubmitting = false;
+        clearActiveWorkspaceJob();
+        clearFakeProgressTimer();
+        workspaceState.submissionAbortController = null;
+        syncJobPreview({
+          status: "cancelled",
+          progressIndex: 0,
+          logBadgeText: "上传已中断",
+          runtimeMeta: {
+            ...workspaceState.runtimeMeta,
+            error: "上传已中断",
+          },
+        });
+        updateDropzoneState("上传已中断", "error");
+        return;
+      }
+      workspaceState.isSubmitting = false;
+      clearActiveWorkspaceJob();
+      clearFakeProgressTimer();
+      workspaceState.submissionAbortController = null;
+      syncJobPreview({
+        status: "failed",
+        progressIndex: 0,
+        logBadgeText: error instanceof Error ? error.message : "创建训练任务失败。",
+        runtimeMeta: {
+          ...workspaceState.runtimeMeta,
+          error: error instanceof Error ? error.message : "创建训练任务失败。",
+        },
+      });
+      updateDropzoneState(error instanceof Error ? error.message : "创建训练任务失败。", "error");
+    }
+  }
+
   function attemptStartTraining() {
-    if (!workspaceState.modeActivated) return;
+    if (!workspaceState.modeActivated || workspaceState.isSubmitting || hasActiveWorkspaceJob()) return;
 
     const isReady = commitSelection(workspaceState.selectedFiles);
     if (!isReady) return;
 
+    if (workspaceState.mode !== "colmap") {
+      window.alert("当前最小可运行版只接入了 COLMAP 模式的真实训练。图片目录和视频模式会在后续继续补全。");
+      return;
+    }
+
     const confirmed = window.confirm(
-      `请确认当前 ${getWorkspaceInputMode(workspaceState.mode).label} 的超参数已经设置无误。确认后将开始模拟训练流程。`,
+      `请确认当前 ${getWorkspaceInputMode(workspaceState.mode).label} 的超参数已经设置无误。确认后将开始真实训练任务。`,
     );
     if (!confirmed) return;
 
     setWorkspaceDetailPanelsHidden(true);
+    setSceneGuideCollapsed(true, "auto");
+    workspaceState.paramsCollapsed = true;
+    renderParams(workspaceState.mode);
     setTimelineVisible(true);
     setParamsVisible(true);
-    startTaskSimulation();
+    switchTab("log");
+    void startRealColmapTraining();
+  }
+
+  async function attemptCancelTraining() {
+    if (!hasActiveWorkspaceJob() && !workspaceState.isSubmitting) return;
+
+    if (workspaceState.isSubmitting && workspaceState.submissionAbortController) {
+      workspaceState.submissionAbortController.abort();
+      return;
+    }
+
+    try {
+      const job = await cancelTrainingJob(workspaceState.activeJobId);
+      applyServerJob(job);
+      if (job.state === "cancelling") {
+        scheduleTrainingJobPoll(job.id, 700);
+      }
+    } catch (error) {
+      syncJobPreview({
+        status: "failed",
+        progressIndex: workspaceState.progressIndex >= 0 ? workspaceState.progressIndex : 0,
+        logBadgeText: error instanceof Error ? error.message : "中断任务失败。",
+        runtimeMeta: {
+          ...workspaceState.runtimeMeta,
+          error: error instanceof Error ? error.message : "中断任务失败。",
+        },
+      });
+    }
   }
 
   if (tabViewer) tabViewer.addEventListener("click", () => switchTab("viewer"));
   if (tabLog) tabLog.addEventListener("click", () => switchTab("log"));
 
+  sceneGuideToggle?.addEventListener("click", () => {
+    setSceneGuideCollapsed(!workspaceState.sceneGuideCollapsed, "manual");
+  });
+
+  sceneGuidePanel?.addEventListener("click", (event) => {
+    const sceneLink = event.target.closest('a.scene-card[href]');
+    if (!sceneLink) return;
+    if (!hasActiveWorkspaceJob() && !workspaceState.isSubmitting) return;
+
+    event.preventDefault();
+    window.alert("当前训练仍在进行中。为避免丢失任务上下文，场景导览已暂时锁定；请先中断训练或等待任务完成。");
+  });
+
+  workspaceViewerExpandBtn?.addEventListener("click", () => {
+    setSceneGuideCollapsed(false, "manual");
+  });
+
   // 3. 表单控件交互补充 (Segment切换 & Upload点击)
   segmentButtons.forEach((button) => {
     button.addEventListener("click", () => {
+      if ((workspaceState.isSubmitting || hasActiveWorkspaceJob()) && button.dataset.inputMode !== workspaceState.mode) {
+        window.alert("当前任务仍在进行中，请等待结束后再切换输入模式。");
+        return;
+      }
       applyMode(button.dataset.inputMode || "images", true);
     });
   });
@@ -2204,6 +3038,10 @@ function setupWorkspaceInteraction(selectedScene) {
     videoInput.value = "";
   });
 
+  sceneNameInput?.addEventListener("input", () => {
+    syncJobPreview();
+  });
+
   paramsPanel?.addEventListener("input", (event) => {
     const target = event.target;
     if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) return;
@@ -2211,6 +3049,13 @@ function setupWorkspaceInteraction(selectedScene) {
     if (!key) return;
 
     workspaceState.paramValues[key] = readWorkspaceParamControlValue(target);
+    if (key === "input_image_dir" || key === "sparse_root") {
+      workspaceState.runtimeMeta = {
+        ...workspaceState.runtimeMeta,
+        selected_image_dir: key === "input_image_dir" ? workspaceState.paramValues[key] : workspaceState.paramValues.input_image_dir,
+        sparse_root: key === "sparse_root" ? workspaceState.paramValues[key] : workspaceState.paramValues.sparse_root,
+      };
+    }
     syncJobPreview();
   });
 
@@ -2221,21 +3066,47 @@ function setupWorkspaceInteraction(selectedScene) {
     if (!key) return;
 
     workspaceState.paramValues[key] = readWorkspaceParamControlValue(target);
+    if (key === "input_image_dir" || key === "sparse_root") {
+      workspaceState.runtimeMeta = {
+        ...workspaceState.runtimeMeta,
+        selected_image_dir: key === "input_image_dir" ? workspaceState.paramValues[key] : workspaceState.paramValues.input_image_dir,
+        sparse_root: key === "sparse_root" ? workspaceState.paramValues[key] : workspaceState.paramValues.sparse_root,
+      };
+    }
     syncJobPreview();
   });
 
   setupSceneGallery(selectedScene);
 
   paramsPanel?.addEventListener("click", (event) => {
+    const collapseButton = event.target.closest("#workspace-params-collapse");
+    if (collapseButton) {
+      workspaceState.paramsCollapsed = !workspaceState.paramsCollapsed;
+      renderParams(workspaceState.mode);
+      return;
+    }
+  });
+
+  paramsPanel?.addEventListener("click", (event) => {
     const button = event.target.closest("#workspace-start-training");
     if (!button) return;
-    if (button.hasAttribute("disabled")) return;
+    if (button instanceof HTMLButtonElement && button.disabled) return;
     attemptStartTraining();
   });
 
+  paramsPanel?.addEventListener("click", (event) => {
+    const button = event.target.closest("#workspace-cancel-training");
+    if (!button) return;
+    if (button instanceof HTMLButtonElement && button.disabled) return;
+    void attemptCancelTraining();
+  });
+
   applyMode("images", false);
+  syncSceneGuidePanel();
+  syncWorkspaceViewerMode();
   setTimelineVisible(false);
   setParamsVisible(false);
+  void restoreActiveWorkspaceJob();
 }
 
 function setupSceneGallery(scene) {
@@ -2469,8 +3340,11 @@ export function renderWorkspacePage(
       <!-- 左侧控制面板 -->
       <aside class="sidebar sidebar--left">
         <!-- 场景导览 -->
-        <section class="panel action-panel">
-          <h2>场景导览区</h2>
+        <section class="panel action-panel scene-guide-panel" id="scene-guide-panel">
+          <div class="scene-guide-panel__head">
+            <h2>场景导览区</h2>
+            <button type="button" class="scene-guide-panel__toggle" id="scene-guide-toggle" aria-expanded="true">收起</button>
+          </div>
           <div class="scene-grid-small">
             ${buildSceneCards(scenes, selectedScene.id)}
           </div>
@@ -2488,7 +3362,7 @@ export function renderWorkspacePage(
 
           <div class="form-group">
             <label>场景名</label>
-            <input type="text" class="input-field" placeholder="${selectedScene.id}" value="${selectedScene.id}" />
+            <input id="workspace-scene-name" type="text" class="input-field" placeholder="${selectedScene.id}" value="${selectedScene.id}" />
           </div>
 
           <div class="form-group">
@@ -2529,11 +3403,25 @@ export function renderWorkspacePage(
               <span>Loading pretrained ${selectedScene.id} splats...</span>
           </div>
           <div class="viewer-status-text" id="status">Initiating Viewer...</div>
+          <div class="viewer-preview-badge" id="viewer-preview-badge" aria-hidden="true">
+            <span class="viewer-preview-badge__label">Preview</span>
+            <strong id="viewer-preview-iteration">iteration --</strong>
+          </div>
+          <div class="workspace-viewer-overlay" id="workspace-viewer-overlay" aria-hidden="true">
+            <div class="workspace-viewer-overlay__card">
+              <p class="workspace-viewer-overlay__eyebrow">WORKSPACE MODE</p>
+              <h3>训练预览准备中</h3>
+              <p class="workspace-viewer-overlay__body">MEGS² 会在保存 checkpoint 后生成可预览结果。首个可视化快照出现后，这里会自动切换。</p>
+              <p class="workspace-viewer-overlay__meta" id="workspace-viewer-preview-meta">等待首个可预览的 checkpoint...</p>
+              <button type="button" class="btn btn--outline workspace-viewer-overlay__btn" id="workspace-expand-scene-guide">展开场景导览</button>
+            </div>
+          </div>
           <div id="viewer"></div>
         </div>
 
         <!-- 日志查看容器 (初始隐藏) -->
         <div class="log-stage" id="log-stage" style="display: none;">
+          ${buildTrainingProgressPanel()}
           <div class="log-header">
             <div class="log-title">
               <strong>job.json</strong>
@@ -2561,6 +3449,8 @@ export function renderWorkspacePage(
         <section class="panel workspace-params-panel" id="workspace-params-panel" style="display: none;">
           <h2>重建参数</h2>
         </section>
+
+        ${buildTrainingRuntimePanel()}
 
         <section class="panel info-panel workspace-detail-panel">
           <h2>场景简介</h2>

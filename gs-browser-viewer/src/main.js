@@ -12,6 +12,7 @@ const studioViewerBridge = {
   mode: null,
   viewer: null,
   iframe: null,
+  sceneIndex: null,
 };
 
 window.focusGSRuntimeStats = window.focusGSRuntimeStats || {
@@ -22,6 +23,7 @@ function setStudioViewerBridge(nextState = {}) {
   studioViewerBridge.mode = nextState.mode || null;
   studioViewerBridge.viewer = nextState.viewer || null;
   studioViewerBridge.iframe = nextState.iframe || null;
+  studioViewerBridge.sceneIndex = Number.isInteger(nextState.sceneIndex) ? nextState.sceneIndex : null;
 }
 
 function teardownStudioViewerBridge() {
@@ -36,6 +38,51 @@ function teardownStudioViewerBridge() {
 
   setStudioViewerBridge();
 }
+
+window.focusGSStudioLoadPreview = async function (previewUrl, iteration = "") {
+  const viewerRoot = document.getElementById("viewer");
+  const overlayEl = document.getElementById("workspace-viewer-overlay");
+  const statusEl = document.getElementById("status");
+  if (!viewerRoot || !previewUrl) return;
+
+  if (!studioViewerBridge.viewer || studioViewerBridge.mode !== "local") {
+    teardownStudioViewerBridge();
+    const viewer = createViewer(viewerRoot);
+    setStudioViewerBridge({ mode: "local", viewer, sceneIndex: null });
+  }
+
+  const viewer = studioViewerBridge.viewer;
+  if (!viewer) return;
+
+  try {
+    if (typeof studioViewerBridge.sceneIndex === "number") {
+      await viewer.removeSplatScene(studioViewerBridge.sceneIndex, false);
+      studioViewerBridge.sceneIndex = null;
+    }
+
+    const nextSceneIndex = await viewer.addSplatScene(previewUrl, {
+      splatAlphaRemovalThreshold: 5,
+      showLoadingUI: true,
+      progressiveLoad: true,
+    });
+    studioViewerBridge.sceneIndex = nextSceneIndex;
+    viewer.start?.();
+
+    if (statusEl) {
+      statusEl.style.display = "block";
+      statusEl.textContent = iteration ? `Training preview · iteration ${iteration}` : "Training preview ready";
+    }
+    if (overlayEl) {
+      overlayEl.classList.remove("is-visible");
+    }
+  } catch (error) {
+    console.error("Failed to load training preview", error);
+    if (statusEl) {
+      statusEl.style.display = "block";
+      statusEl.textContent = "Training preview not ready yet";
+    }
+  }
+};
 
 function prefersReducedMotion() {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
