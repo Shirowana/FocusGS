@@ -1,107 +1,217 @@
 [
   {
     "id": "garden",
-    "name": "Garden",
+    "name": "花园",
     "dataset": "MipNeRF360",
+    "sourceLabel": "MipNeRF360",
+    "sourceSceneName": "Garden",
+    "imageCount": 185,
+    "summary": "户外花园场景，适合观察植被层次与空间视差。",
+    "galleryImages": [
+      "/gallery/garden/01.jpg",
+      "/gallery/garden/02.jpg",
+      "/gallery/garden/03.jpg",
+      "/gallery/garden/04.jpg"
+    ],
     "thumbnail": "/thumbnails/garden.svg",
     "modelPath": "/assets/garden/point_cloud/iteration_30000/point_cloud.ply",
-    "description": "Outdoor garden scene reconstructed with Gaussian Splatting.",
-    "tags": ["featured", "outdoor"],
+    "description": "基于 Gaussian Splatting 重建的户外花园场景，植被层次丰富，视差表现明显。",
+    "tags": ["outdoor", "foliage"],
     "iteration": 30000,
     "metrics": {
-      "psnr": null,
-      "ssim": null,
-      "lpips": null
+      "psnr": 27.17,
+      "ssim": 0.858,
+      "lpips": 0.127
     }
   },
   {
     "id": "room",
-    "name": "Room",
+    "name": "房间",
     "dataset": "MipNeRF360",
+    "sourceLabel": "MipNeRF360",
+    "sourceSceneName": "Room",
+    "imageCount": 311,
+    "summary": "室内家具密集，适合观察遮挡关系与近景结构稳定性。",
+    "galleryImages": [
+      "/gallery/room/01.jpg",
+      "/gallery/room/02.jpg",
+      "/gallery/room/03.jpg",
+      "/gallery/room/04.jpg"
+    ],
     "thumbnail": "/thumbnails/room.svg",
     "modelPath": "/assets/room/point_cloud/iteration_30000/point_cloud.ply",
-    "description": "Indoor room scene with dense furniture and narrow view corridors.",
-    "tags": ["featured", "indoor"],
+    "description": "室内房间重建场景，家具密集，观察通道狭窄，适合展示细节遮挡表现。",
+    "tags": ["indoor", "furniture"],
     "iteration": 30000,
     "metrics": {
-      "psnr": null,
-      "ssim": null,
-      "lpips": null
+      "psnr": 31.56,
+      "ssim": 0.923,
+      "lpips": 0.207
     }
   },
   {
     "id": "bicycle",
-    "name": "Bicycle",
+    "name": "自行车",
     "dataset": "MipNeRF360",
+    "sourceLabel": "MipNeRF360",
+    "sourceSceneName": "Bicycle",
+    "imageCount": 194,
+    "summary": "主体轮廓鲜明，适合观察物体细节与前后景分层。",
+    "galleryImages": [
+      "/gallery/bicycle/01.jpg",
+      "/gallery/bicycle/02.jpg",
+      "/gallery/bicycle/03.jpg",
+      "/gallery/bicycle/04.jpg"
+    ],
     "thumbnail": "/thumbnails/bicycle.svg",
     "modelPath": "/assets/bicycle/point_cloud/iteration_30000/point_cloud.ply",
-    "description": "Outdoor bicycle scene with strong background depth variation.",
-    "tags": ["outdoor"],
+    "description": "户外自行车场景，前后景深差异明显，适合观察多层空间结构。",
+    "tags": ["outdoor", "vehicle"],
     "iteration": 30000,
     "metrics": {
-      "psnr": null,
-      "ssim": null,
-      "lpips": null
+      "psnr": 25.34,
+      "ssim": 0.782,
+      "lpips": 0.206
     }
   },
   {
     "id": "bonsai",
-    "name": "Bonsai",
+    "name": "盆景",
     "dataset": "MipNeRF360",
+    "sourceLabel": "MipNeRF360",
+    "sourceSceneName": "Bonsai",
+    "imageCount": 292,
+    "summary": "近景细节丰富，适合观察枝叶与桌面结构恢复。",
+    "galleryImages": [
+      "/gallery/bonsai/01.jpg",
+      "/gallery/bonsai/02.jpg",
+      "/gallery/bonsai/03.jpg",
+      "/gallery/bonsai/04.jpg"
+    ],
     "thumbnail": "/thumbnails/bonsai.svg",
     "modelPath": "/assets/bonsai/point_cloud/iteration_30000/point_cloud.ply",
-    "description": "Indoor bonsai tabletop scene with fine structure and dense occlusion.",
-    "tags": ["indoor"],
+    "description": "室内盆景桌面场景，结构精细、遮挡丰富，适合展示局部几何恢复效果。",
+    "tags": ["indoor", "tabletop"],
     "iteration": 30000,
     "metrics": {
-      "psnr": null,
-      "ssim": null,
-      "lpips": null
+      "psnr": 31.95,
+      "ssim": 0.943,
+      "lpips": 0.192
     }
   },
   {
     "id": "counter",
-    "name": "Counter",
+    "name": "操作台",
     "dataset": "MipNeRF360",
+    "sourceLabel": "MipNeRF360",
+    "sourceSceneName": "Counter",
+    "imageCount": 240,
+    "summary": "复杂小物体密集，适合观察遮挡与反光区域表现。",
+    "galleryImages": [
+      "/gallery/counter/01.jpg",
+      "/gallery/counter/02.jpg",
+      "/gallery/counter/03.jpg",
+      "/gallery/counter/04.jpg"
+    ],
     "thumbnail": "/thumbnails/counter.svg",
     "modelPath": "/assets/counter/point_cloud/iteration_30000/point_cloud.ply",
-    "description": "Kitchen counter scene with glossy surfaces and cluttered objects.",
-    "tags": ["indoor"],
+    "description": "室内操作台场景，物体堆叠密集并伴随反光表面，适合展示复杂细节。",
+    "tags": ["indoor", "cluttered"],
     "iteration": 30000,
     "metrics": {
-      "psnr": null,
-      "ssim": null,
-      "lpips": null
+      "psnr": 28.78,
+      "ssim": 0.906,
+      "lpips": 0.195
     }
   },
   {
     "id": "kitchen",
-    "name": "Kitchen",
+    "name": "厨房",
     "dataset": "MipNeRF360",
+    "sourceLabel": "MipNeRF360",
+    "sourceSceneName": "Kitchen",
+    "imageCount": 279,
+    "summary": "大平面与重复纹理并存，适合观察整体空间一致性。",
+    "galleryImages": [
+      "/gallery/kitchen/01.jpg",
+      "/gallery/kitchen/02.jpg",
+      "/gallery/kitchen/03.jpg",
+      "/gallery/kitchen/04.jpg"
+    ],
     "thumbnail": "/thumbnails/kitchen.svg",
     "modelPath": "/assets/kitchen/point_cloud/iteration_30000/point_cloud.ply",
-    "description": "Wide kitchen reconstruction with repeated patterns and large planes.",
-    "tags": ["indoor"],
+    "description": "宽视角厨房场景，包含大面积平面与重复结构，适合观察整体空间稳定性。",
+    "tags": ["indoor", "wide"],
     "iteration": 30000,
     "metrics": {
-      "psnr": null,
-      "ssim": null,
-      "lpips": null
+      "psnr": 31.51,
+      "ssim": 0.927,
+      "lpips": 0.127
     }
   },
   {
     "id": "stump",
-    "name": "Stump",
+    "name": "树桩",
     "dataset": "MipNeRF360",
+    "sourceLabel": "MipNeRF360",
+    "sourceSceneName": "Stump",
+    "imageCount": 125,
+    "summary": "强视差自然场景，适合观察树皮与细枝叶的稳定性。",
+    "galleryImages": [
+      "/gallery/stump/01.jpg",
+      "/gallery/stump/02.jpg",
+      "/gallery/stump/03.jpg",
+      "/gallery/stump/04.jpg"
+    ],
     "thumbnail": "/thumbnails/stump.svg",
     "modelPath": "/assets/stump/point_cloud/iteration_30000/point_cloud.ply",
-    "description": "Outdoor stump scene with foliage, thin geometry, and heavy parallax.",
-    "tags": ["outdoor"],
+    "description": "户外树桩场景，叶片与细长结构较多，镜头移动时能体现强烈视差。",
+    "tags": ["outdoor", "parallax"],
     "iteration": 30000,
     "metrics": {
-      "psnr": null,
-      "ssim": null,
-      "lpips": null
+      "psnr": 27.19,
+      "ssim": 0.803,
+      "lpips": 0.198
+    }
+  },
+  {
+    "id": "flowers",
+    "name": "花丛",
+    "dataset": "MipNeRF360",
+    "sourceLabel": "MipNeRF360",
+    "sourceSceneName": "Flowers",
+    "imageCount": 173,
+    "summary": "高频纹理密集，适合观察花叶细节与清晰度表现。",
+    "galleryImages": [],
+    "thumbnail": "/thumbnails/flowers.svg",
+    "modelPath": "/assets/flowers/point_cloud/iteration_30000/point_cloud.ply",
+    "description": "户外花丛场景，细碎结构与高频纹理丰富，适合展示渲染清晰度。",
+    "tags": ["outdoor", "floral"],
+    "iteration": 30000,
+    "metrics": {
+      "psnr": 21.65,
+      "ssim": 0.625,
+      "lpips": 0.331
+    }
+  },
+  {
+    "id": "treehill",
+    "name": "山坡林地",
+    "dataset": "MipNeRF360",
+    "sourceLabel": "MipNeRF360",
+    "sourceSceneName": "Treehill",
+    "imageCount": 141,
+    "summary": "大场景纵深明显，适合观察层次展开与空间连贯性。",
+    "galleryImages": [],
+    "thumbnail": "/thumbnails/treehill.svg",
+    "modelPath": "/assets/treehill/point_cloud/iteration_30000/point_cloud.ply",
+    "description": "山坡林地场景，树木分布形成层次纵深，适合展示大场景浏览体验。",
+    "tags": ["outdoor", "landscape"],
+    "iteration": 30000,
+    "metrics": {
+      "psnr": 22.74,
+      "ssim": 0.649,
+      "lpips": 0.313
     }
   }
 ]

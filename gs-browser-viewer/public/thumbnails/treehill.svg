@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#183b2e"/>
+      <stop offset="100%" stop-color="#0b1410"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="360" fill="url(#bg)"/>
+  <path d="M0 270 C120 210, 220 320, 340 250 S560 210, 640 265 L640 360 L0 360 Z" fill="#3b5f39" opacity="0.9"/>
+  <circle cx="178" cy="132" r="46" fill="#7db35f" opacity="0.5"/>
+  <circle cx="410" cy="118" r="50" fill="#6d9c4f" opacity="0.38"/>
+  <text x="64" y="126" fill="#f2fbf4" font-size="42" font-family="Segoe UI, sans-serif">Treehill</text>
+  <text x="64" y="164" fill="#b8dfb8" font-size="20" font-family="Segoe UI, sans-serif">MipNeRF360 • 3DGS compressed scene</text>
+</svg>

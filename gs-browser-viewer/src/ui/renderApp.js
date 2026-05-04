@@ -1,22 +1,85 @@
 // src/ui/renderApp.js
 
+import gardenHeroVideo from "../../figures/garden.mp4";
+import roomHeroVideo from "../../figures/room.mp4";
+import treehillHeroVideo from "../../figures/Treehill.mp4";
+
 let parallaxScrollListener = null;
+let parallaxResizeListener = null;
+let parallaxFrameId = 0;
+let parallaxTargets = [];
 
 // ---- 视差初始化 ----
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function measureParallaxTargets() {
+  parallaxTargets = Array.from(document.querySelectorAll("[data-parallax-speed]"))
+    .map((el) => {
+      const speed = Number.parseFloat(el.dataset.parallaxSpeed || "0");
+      const maxOffset = Number.parseFloat(el.dataset.parallaxMax || "72");
+      const rect = el.getBoundingClientRect();
+
+      return {
+        el,
+        speed: Number.isFinite(speed) ? speed : 0,
+        maxOffset: Number.isFinite(maxOffset) ? Math.abs(maxOffset) : 72,
+        baseTop: rect.top + window.scrollY,
+        baseHeight: rect.height || el.offsetHeight || 0,
+      };
+    })
+    .filter((target) => target.speed !== 0);
+}
+
+function applyParallaxTargets() {
+  if (!parallaxTargets.length) return;
+
+  const viewportCenter = window.scrollY + window.innerHeight / 2;
+
+  parallaxTargets.forEach((target) => {
+    if (!target.el.isConnected) return;
+
+    const elementCenter = target.baseTop + target.baseHeight / 2;
+    const rawOffset = (viewportCenter - elementCenter) * target.speed;
+    const offset = clamp(rawOffset, -target.maxOffset, target.maxOffset);
+    target.el.style.setProperty("--parallax-offset-y", `${offset.toFixed(2)}px`);
+  });
+}
+
 function setupParallax() {
   if (parallaxScrollListener) {
     window.removeEventListener("scroll", parallaxScrollListener);
   }
-  const heroVisual = document.querySelector(".hero-visual-card");
-  const heroBg = document.querySelector(".hero-bg-glow");
+  if (parallaxResizeListener) {
+    window.removeEventListener("resize", parallaxResizeListener);
+  }
+  parallaxScrollListener = null;
+  parallaxResizeListener = null;
+  if (parallaxFrameId) {
+    cancelAnimationFrame(parallaxFrameId);
+    parallaxFrameId = 0;
+  }
+
+  measureParallaxTargets();
+  if (!parallaxTargets.length) return;
 
   parallaxScrollListener = () => {
-    if (!document.querySelector(".landing-page")) return;
-    const scrollY = window.scrollY;
-    if (heroVisual) heroVisual.style.transform = `translateY(${scrollY * 0.15}px)`;
-    if (heroBg) heroBg.style.transform = `translateX(-50%) translateY(${scrollY * 0.3}px)`;
+    if (parallaxFrameId) return;
+    parallaxFrameId = window.requestAnimationFrame(() => {
+      parallaxFrameId = 0;
+      applyParallaxTargets();
+    });
   };
-  window.addEventListener("scroll", parallaxScrollListener);
+
+  parallaxResizeListener = () => {
+    measureParallaxTargets();
+    applyParallaxTargets();
+  };
+
+  window.addEventListener("scroll", parallaxScrollListener, { passive: true });
+  window.addEventListener("resize", parallaxResizeListener, { passive: true });
+  applyParallaxTargets();
 }
 
 // ---- 绑定全局主题切换，供 HTML onclick 调用 ----
@@ -34,6 +97,12 @@ window.toggleTheme = function () {
 // ---- 工具函数 ----
 function formatMetric(value) {
   return value == null ? "—" : String(value);
+}
+
+function formatMetricByType(type, value) {
+  if (value == null) return "—";
+  if (type === "psnr") return Number(value).toFixed(2);
+  return Number(value).toFixed(3);
 }
 
 /**
@@ -84,6 +153,24 @@ function buildTagList(tags = [], isSmall = false) {
 }
 
 const HOME_METHOD_BADGES = ["3DGS Core", "Memory-Efficient", "Web Demo"];
+
+const HERO_DEMO_VIDEOS = [
+  {
+    title: "Garden",
+    label: "Outdoor Reconstruction",
+    src: gardenHeroVideo,
+  },
+  {
+    title: "Room",
+    label: "Indoor Detail Recovery",
+    src: roomHeroVideo,
+  },
+  {
+    title: "Treehill",
+    label: "Large-Scale Scene Browsing",
+    src: treehillHeroVideo,
+  },
+];
 
 const HOME_METHOD_POINTS = [
   {
@@ -145,8 +232,48 @@ const HOME_PIPELINE_STEPS = [
 
 const HOME_GITHUB_LINK = "https://github.com/Shirowana/FocusGS.git";
 
+const SCENE_HIGHLIGHTS = {
+  garden: [
+    "花园场景里的草木层次比较丰富，适合观察细碎植被在连续视角切换中的稳定性。",
+    "这类户外自然场景很能体现 3DGS 在真实空间深度和整体氛围恢复上的表现。",
+  ],
+  room: [
+    "房间场景里家具密集、遮挡频繁，适合观察室内近景结构是否保持完整。",
+    "在转动视角时，可以重点留意狭窄空间里的边缘是否自然、透视是否连贯。",
+  ],
+  bicycle: [
+    "自行车场景前后景分层明显，适合观察物体主体与背景之间的空间关系。",
+    "金属车架和复杂轮廓也很适合作为细节保真与视差表现的直观参考。",
+  ],
+  bonsai: [
+    "盆景场景包含枝叶、花盆和桌面等多类局部结构，适合看近距离细节恢复。",
+    "它也是一个很适合观察高对比局部光照和细小几何是否稳定的室内样例。",
+  ],
+  counter: [
+    "操作台场景物体堆叠密集，能直观看到复杂遮挡下的重建完整度。",
+    "这里也适合留意反光表面和小物件边缘是否会在浏览时出现破碎感。",
+  ],
+  kitchen: [
+    "厨房场景大平面和重复结构较多，适合看整体空间是否足够稳定统一。",
+    "当镜头缓慢移动时，可以重点观察柜体、台面和墙面的连续性是否自然。",
+  ],
+  stump: [
+    "树桩场景视差很强，适合测试镜头绕转时前后景层次是否足够清晰。",
+    "细枝叶与不规则树皮也能帮助判断模型对复杂自然几何的恢复能力。",
+  ],
+  flowers: [
+    "花丛场景拥有大量高频纹理和细小结构，是观察清晰度表现的典型样例。",
+    "如果场景浏览依然保持稳定，通常说明细节表达和空间组织都比较扎实。",
+  ],
+  treehill: [
+    "山坡林地场景纵深感很强，适合观察大场景浏览时的层次展开效果。",
+    "树木分布与地形起伏结合在一起，能够更直观地体现整体空间感是否自然。",
+  ],
+};
+
 let workflowAutoAdvanceTimer = null;
 let workflowAutoAdvanceObserver = null;
+let gpuSummaryPollTimer = null;
 
 function isVideoAsset(src = "") {
   return /\.(mp4|webm)$/i.test(src);
@@ -175,6 +302,58 @@ function buildMethodBadges() {
     .join("");
 }
 
+function buildHeroDemoStrip() {
+  return HERO_DEMO_VIDEOS
+    .map(
+      (video, index) => `
+        <figure class="hero-demo-card" data-parallax-speed="${0.05 + index * 0.02}" data-parallax-max="${28 + index * 6}">
+          <div class="hero-demo-card__media">
+            <video
+              class="hero-demo-card__video"
+              src="${video.src}"
+              autoplay
+              muted
+              loop
+              playsinline
+              preload="auto"
+            ></video>
+          </div>
+          <figcaption class="hero-demo-card__caption">
+            <strong>${video.title}</strong>
+            <span>${video.label}</span>
+          </figcaption>
+        </figure>
+      `,
+    )
+    .join("");
+}
+
+function buildPageSwitch(sceneId = "garden", activePage = "home") {
+  return `
+    <div class="page-switch" role="tablist" aria-label="Page Navigation" data-active="${activePage}">
+      <span class="page-switch__thumb" aria-hidden="true"></span>
+      <a
+        class="page-switch__item ${activePage === "home" ? "is-active" : ""}"
+        href="/"
+        data-page="home"
+        role="tab"
+        aria-selected="${activePage === "home"}"
+      >
+        首页
+      </a>
+      <a
+        class="page-switch__item ${activePage === "workspace" ? "is-active" : ""}"
+        href="/?scene=${sceneId}"
+        data-page="workspace"
+        role="tab"
+        aria-selected="${activePage === "workspace"}"
+      >
+        工作台
+      </a>
+    </div>
+  `;
+}
+
 function buildMethodPoints() {
   return HOME_METHOD_POINTS
     .map(
@@ -191,7 +370,7 @@ function buildMethodPoints() {
 function buildMethodVisual() {
   return `
     <div class="method-visual">
-      <div class="method-visual__frame">
+      <div class="method-visual__frame" data-parallax-speed="0.09" data-parallax-max="56">
         <div class="method-visual__header">
           <span>FocusGS / Method Overview</span>
           <strong>3DGS + MEGS-2</strong>
@@ -326,6 +505,165 @@ function buildWorkflowCopy(step) {
   `;
 }
 
+function buildSceneSourceCopy(scene) {
+  if (scene.imageCount) {
+    return `来自 ${scene.sourceLabel || scene.dataset} 的 ${scene.sourceSceneName || scene.id}（${scene.name}）场景，共 ${scene.imageCount} 张输入图像。`;
+  }
+
+  return `来自 ${scene.sourceLabel || scene.dataset} 的 ${scene.sourceSceneName || scene.id}（${scene.name}）场景，本轮先展示压缩结果，本地输入图像待后续补充。`;
+}
+
+function buildSceneGallery(scene) {
+  const images = Array.isArray(scene.galleryImages) ? scene.galleryImages : [];
+  const initialImage = images[0] || scene.thumbnail;
+  const hasCarousel = images.length > 1;
+  const countText = hasCarousel ? `1 / ${images.length}` : images.length === 1 ? "1 / 1" : "Static Preview";
+  const statusText = hasCarousel || images.length === 1 ? "本地输入图像预览" : "本地原图待补充";
+
+  return `
+    <div class="scene-gallery ${hasCarousel ? "" : "is-static"}" id="scene-gallery">
+      <div class="scene-gallery__frame">
+        <img
+          id="scene-gallery-image"
+          class="scene-gallery__image"
+          src="${initialImage}"
+          alt="${scene.name} gallery preview"
+        />
+        <div class="scene-gallery__veil"></div>
+      </div>
+      <div class="scene-gallery__footer">
+        <div class="scene-gallery__meta">
+          <strong>${statusText}</strong>
+          <span id="scene-gallery-count">${countText}</span>
+        </div>
+        ${
+          hasCarousel
+            ? `
+              <div class="scene-gallery__controls">
+                <button type="button" class="scene-gallery__nav" id="scene-gallery-prev" aria-label="上一张">&lt;</button>
+                <button type="button" class="scene-gallery__nav" id="scene-gallery-next" aria-label="下一张">&gt;</button>
+              </div>
+            `
+            : ""
+        }
+      </div>
+    </div>
+  `;
+}
+
+function buildSceneHighlightPanel(scene) {
+  return `
+    <section class="panel code-panel code-panel--expanded">
+      <h2>场景亮点</h2>
+      <div class="scene-info-card scene-info-card--highlight">
+        <div class="scene-info-block">
+          <span class="scene-info-block__eyebrow">数据来源</span>
+          <p>${buildSceneSourceCopy(scene)}</p>
+        </div>
+        <div class="scene-info-block">
+          <span class="scene-info-block__eyebrow">场景说明</span>
+          <p>${scene.summary || scene.description}</p>
+        </div>
+        ${buildSceneGallery(scene)}
+        <div class="tag-row scene-info-card__tags">${buildTagList(scene.tags)}</div>
+      </div>
+    </section>
+  `;
+}
+
+function buildPerformanceSummary() {
+  return `
+    <div class="perf-summary" id="perf-summary">
+      <div class="perf-summary__item perf-summary__item--live">
+        <div class="perf-summary__row">
+          <strong>当前显存占用</strong>
+          <span class="perf-summary__value" id="gpu-memory-value">--</span>
+        </div>
+        <p id="gpu-name-copy">正在连接本地 GPU 状态...</p>
+      </div>
+      <div class="perf-summary__item perf-summary__item--live">
+        <div class="perf-summary__row">
+          <strong>GPU 利用率</strong>
+          <span class="perf-summary__value" id="gpu-util-value">--</span>
+        </div>
+        <p>实时读取当前图形处理器的忙碌程度。</p>
+      </div>
+      <div class="perf-summary__item perf-summary__item--live perf-summary__item--accent">
+        <div class="perf-summary__row">
+          <strong>FPS 帧数</strong>
+          <span class="perf-summary__value" id="gpu-fps-value">--</span>
+        </div>
+        <p id="gpu-refresh-copy">等待 viewer 回传实时帧率...</p>
+      </div>
+    </div>
+  `;
+}
+
+function stopGpuSummaryPolling() {
+  if (gpuSummaryPollTimer) {
+    clearInterval(gpuSummaryPollTimer);
+    gpuSummaryPollTimer = null;
+  }
+}
+
+async function refreshGpuSummary() {
+  const memoryEl = document.getElementById("gpu-memory-value");
+  const utilEl = document.getElementById("gpu-util-value");
+  const fpsEl = document.getElementById("gpu-fps-value");
+  const nameCopyEl = document.getElementById("gpu-name-copy");
+  const refreshCopyEl = document.getElementById("gpu-refresh-copy");
+  if (!memoryEl || !utilEl || !fpsEl) return;
+
+  const liveFps = Number(window.focusGSRuntimeStats?.fps);
+  fpsEl.textContent = Number.isFinite(liveFps) && liveFps > 0 ? `${liveFps}` : "--";
+
+  try {
+    const response = await fetch("/api/local-gpu", { cache: "no-store" });
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error("LOCAL_GPU_ENDPOINT_MISSING");
+    }
+
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload?.message || "GPU metrics unavailable");
+    }
+
+    memoryEl.textContent = `${payload.memoryUsedMB} / ${payload.memoryTotalMB} MB`;
+    utilEl.textContent = `${payload.utilizationGPU}%`;
+    if (nameCopyEl) nameCopyEl.textContent = payload.name;
+
+    if (refreshCopyEl) {
+      const stamp = new Date(payload.timestamp);
+      const fpsText = Number.isFinite(liveFps) && liveFps > 0 ? ` · FPS ${liveFps}` : "";
+      refreshCopyEl.textContent = `上次刷新 ${stamp.getHours().toString().padStart(2, "0")}:${stamp.getMinutes().toString().padStart(2, "0")}:${stamp.getSeconds().toString().padStart(2, "0")}${fpsText}`;
+    }
+  } catch (error) {
+    memoryEl.textContent = "--";
+    utilEl.textContent = "--";
+    if (nameCopyEl) {
+      nameCopyEl.textContent =
+        error instanceof Error && error.message === "LOCAL_GPU_ENDPOINT_MISSING"
+          ? "本地 GPU 接口未生效，请重启 4173 开发服务。"
+          : "当前环境无法读取本地 GPU 状态。";
+    }
+    if (refreshCopyEl) {
+      refreshCopyEl.textContent =
+        error instanceof Error && error.message === "LOCAL_GPU_ENDPOINT_MISSING"
+          ? "重启 `npm run dev` 或 `vite preview` 后，这里就会显示实时显存。"
+          : "请确认本机可直接执行 nvidia-smi。";
+    }
+  }
+}
+
+function setupGpuSummary() {
+  stopGpuSummaryPolling();
+  if (!document.getElementById("perf-summary")) return;
+
+  refreshGpuSummary();
+  gpuSummaryPollTimer = window.setInterval(refreshGpuSummary, 3000);
+}
+
 function buildWorkflowVisual(step) {
   if (step.mediaSrc) {
     const media = renderResponsiveMedia({
@@ -372,6 +710,7 @@ function updateShowcaseFeature(scene) {
   if (!featureRoot || !scene) return;
 
   featureRoot.innerHTML = buildShowcaseFeature(scene);
+  setupParallax();
 
   document.querySelectorAll(".showcase-scene-card").forEach((card) => {
     card.classList.toggle("is-active", card.dataset.sceneId === scene.id);
@@ -544,7 +883,7 @@ function setupHistoryInteraction() {
 }
 
 // ---- 绑定工作台任务交互模拟 ----
-function setupWorkspaceInteraction() {
+function setupWorkspaceInteraction(selectedScene) {
   // 1. 高级参数折叠
   const advancedToggle = document.getElementById('advanced-toggle');
   const advancedPanel = document.getElementById('advanced-panel');
@@ -561,6 +900,23 @@ function setupWorkspaceInteraction() {
   const tabLog = document.getElementById('tab-log');
   const viewStage = document.getElementById('view-stage');
   const logStage = document.getElementById('log-stage');
+  const timelinePanel = document.getElementById('timeline-panel');
+
+  function setTimelineVisible(visible) {
+    if (!timelinePanel) return;
+    timelinePanel.style.display = visible ? 'block' : 'none';
+  }
+
+  function resetTimeline() {
+    const items = document.querySelectorAll('.timeline-item');
+    items.forEach((item) => {
+      item.classList.remove('is-success', 'is-running');
+      item.classList.add('is-pending');
+    });
+  }
+
+  setTimelineVisible(false);
+  resetTimeline();
 
   function switchTab(mode) {
     if (!tabViewer || !tabLog) return;
@@ -596,12 +952,17 @@ function setupWorkspaceInteraction() {
     });
   }
 
+  setupSceneGallery(selectedScene);
+
   // 4. 模拟“开始重建”流程
   const btnSubmit = document.getElementById('btn-submit-task');
   if (btnSubmit) {
     btnSubmit.addEventListener('click', () => {
       // 切换到日志视图
       switchTab('log');
+      setTimelineVisible(true);
+      resetTimeline();
+      updateTimeline(0, 'running');
       
       // 更新状态徽章
       const logBadge = document.getElementById('log-status-badge');
@@ -629,8 +990,13 @@ function setupWorkspaceInteraction() {
             if(logBadge) logBadge.innerHTML = '<span class="status-dot status-dot--running"></span> 第 3/4 阶段: GS 训练';
           } else if (step === 4) {
             codeBlock.innerHTML += '\n{\n  "stage": "training",\n  "iteration": 7000,\n  "loss": 0.0412\n}';
+            updateTimeline(2, 'success');
+            updateTimeline(3, 'running');
+            if(logBadge) logBadge.innerHTML = '<span class="status-dot status-dot--running"></span> 第 4/4 阶段: 结果渲染';
           } else {
             clearInterval(interval);
+            updateTimeline(3, 'success');
+            if(logBadge) logBadge.innerHTML = '<span class="status-dot status-dot--success"></span> 任务完成';
           }
         }, 1500);
       }
@@ -645,42 +1011,88 @@ function setupWorkspaceInteraction() {
   }
 }
 
+function setupSceneGallery(scene) {
+  const galleryRoot = document.getElementById("scene-gallery");
+  const imageEl = document.getElementById("scene-gallery-image");
+  const countEl = document.getElementById("scene-gallery-count");
+  const prevBtn = document.getElementById("scene-gallery-prev");
+  const nextBtn = document.getElementById("scene-gallery-next");
+  if (!galleryRoot || !imageEl || !scene) return;
+
+  const images = Array.isArray(scene.galleryImages) ? scene.galleryImages : [];
+  if (images.length <= 1) return;
+
+  let currentIndex = 0;
+
+  const renderImage = (nextIndex) => {
+    currentIndex = (nextIndex + images.length) % images.length;
+    galleryRoot.classList.add("is-transitioning");
+
+    window.setTimeout(() => {
+      imageEl.src = images[currentIndex];
+      imageEl.alt = `${scene.name} gallery ${currentIndex + 1}`;
+      if (countEl) countEl.textContent = `${currentIndex + 1} / ${images.length}`;
+      requestAnimationFrame(() => {
+        galleryRoot.classList.remove("is-transitioning");
+      });
+    }, 110);
+  };
+
+  prevBtn?.addEventListener("click", () => renderImage(currentIndex - 1));
+  nextBtn?.addEventListener("click", () => renderImage(currentIndex + 1));
+}
+
 // ============================================================
 // 长首页渲染：展示项目亮点、预览图、画廊
 // ============================================================
-export function renderHomePage(scenes) {
+export function activateHomePage(scenes) {
+  setupParallax();
+  setupShowcaseInteraction(scenes);
+  setupWorkflowInteraction(HOME_PIPELINE_STEPS);
+}
+
+export function renderHomePage(scenes, mountTarget = document.getElementById("app"), options = {}) {
+  const { deferSetup = false } = options;
   document.title = "FocusGS | 3D Gaussian Splatting Showcase";
   stopWorkflowAutoAdvance();
+  stopGpuSummaryPolling();
 
   const featuredScene = scenes[0] || null;
-  const featuredVideoOrImg = featuredScene ? getScenePreviewMedia(featuredScene) : "";
   const sceneCount = scenes.length;
   const activeWorkflowStep = HOME_PIPELINE_STEPS[0];
 
-  document.getElementById("app").innerHTML = `
+  mountTarget.innerHTML = `
     <div class="landing-page">
       <nav class="home-nav">
-         <a class="home-nav-brand" href="/" aria-label="FocusGS Home">
+        <div class="home-nav__surface">
+          <a class="home-nav-brand" href="/" aria-label="FocusGS Home">
             <span class="home-nav-brand__logo-shell" aria-hidden="true">
               <img class="home-nav-brand__logo home-nav-brand__logo--light" src="/logo.png" alt="" />
               <img class="home-nav-brand__logo home-nav-brand__logo--dark" src="/logo-dark.png" alt="" />
             </span>
             <span class="home-nav-brand__text">
               <span class="home-nav-brand__title">FocusGS</span>
-            <span class="home-nav-brand__subtitle">Memory-Efficient 3D Gaussian Splatting</span>
+              <span class="home-nav-brand__subtitle">Memory-Efficient 3D Gaussian Splatting</span>
             </span>
-         </a>
-         <button class="btn btn--icon theme-toggle-btn" onclick="toggleTheme()" title="切换亮/暗色主题">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-         </button>
+          </a>
+          <div class="home-nav__actions">
+            ${buildPageSwitch(featuredScene?.id || "garden", "home")}
+            <button class="btn btn--icon theme-toggle-btn" onclick="toggleTheme()" title="切换亮/暗色主题">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+            </button>
+          </div>
+        </div>
       </nav>
 
       <section class="hero-section">
-        <div class="hero-bg-glow"></div>
+        <div class="hero-bg-glow" data-parallax-speed="0.28" data-parallax-max="88"></div>
         <div class="hero-content">
           <p class="eyebrow">FOCUSGS FRAMEWORK</p>
           <h1 class="hero-title">更省显存，更快走进 3DGS</h1>
           <p class="hero-subtitle">FocusGS 聚焦 3D Gaussian Splatting，并引入 MEGS-2 的内存优化能力，让高质量三维重建在有限硬件上也能顺畅运行。</p>
+          <div class="hero-demo-strip">
+            ${buildHeroDemoStrip()}
+          </div>
           <div class="hero-highlights">
             <span>3DGS Core</span>
             <span>MEGS-2 Strategy</span>
@@ -690,19 +1102,6 @@ export function renderHomePage(scenes) {
             <a href="#showcase" class="btn btn--primary">查看成果展示</a>
             <a href="/?scene=${featuredScene?.id || "garden"}" class="btn btn--outline">进入工作台展示</a>
           </div>
-        </div>
-        <div class="hero-visual">
-           <div class="hero-visual-card">
-              ${renderResponsiveMedia({
-                src: featuredVideoOrImg,
-                alt: "Hero Preview",
-                className: "hero-visual-card__asset",
-                poster: featuredScene?.thumbnail || "",
-              })}
-              <div class="hero-visual-card__shade"></div>
-              <div class="hero-visual-card__chip hero-visual-card__chip--top">Scene-ready viewer</div>
-              <div class="hero-visual-card__chip hero-visual-card__chip--bottom">${featuredScene?.name || "Garden"} • ${featuredScene?.dataset || "MipNeRF360"}</div>
-           </div>
         </div>
       </section>
 
@@ -728,11 +1127,11 @@ export function renderHomePage(scenes) {
       <section id="showcase" class="showcase-section">
         <div class="section-header section-header--centered">
           <p class="section-kicker">Scene Showcase</p>
-          <h2>七个场景，持续扩展的 3DGS 演示入口。</h2>
+          <h2>九个场景，持续扩展的 3DGS 演示入口。</h2>
           <p>从预训练结果到后续新实验场景，FocusGS 让场景展示区保持可新增、可切换、可进入工作台的连续体验。</p>
         </div>
         <div class="showcase-shell">
-          <div class="showcase-stage" id="showcase-feature">
+          <div class="showcase-stage" id="showcase-feature" data-parallax-speed="0.08" data-parallax-max="56">
             ${featuredScene ? buildShowcaseFeature(featuredScene) : ""}
           </div>
           <div class="showcase-grid" id="showcase-grid">
@@ -747,7 +1146,7 @@ export function renderHomePage(scenes) {
           <h2>从输入到回看，工作流应该是动态可读的。</h2>
           <p>四个单元沿着真实使用链路推进：准备输入、开展训练、进入展示、回看历史，让首页本身也像一个轻量演示台。</p>
         </div>
-        <div class="workflow-shell" data-active-index="0">
+        <div class="workflow-shell" data-active-index="0" data-parallax-speed="0.07" data-parallax-max="52">
           <div class="workflow-tabs" id="workflow-tabs">
             ${buildWorkflowTabs(HOME_PIPELINE_STEPS, 0)}
           </div>
@@ -782,11 +1181,11 @@ export function renderHomePage(scenes) {
     </div>
   `;
 
-  setTimeout(() => {
-    setupParallax();
-    setupShowcaseInteraction(scenes);
-    setupWorkflowInteraction(HOME_PIPELINE_STEPS);
-  }, 0);
+  if (!deferSetup) {
+    setTimeout(() => {
+      activateHomePage(scenes);
+    }, 0);
+  }
 }
 
 // ============================================================
@@ -795,36 +1194,52 @@ export function renderHomePage(scenes) {
 // @param {Object} selectedScene 当前场景
 // @param {Array} history 该场景的历史任务列表
 // ============================================================
-export function renderWorkspacePage(scenes, selectedScene, history = []) {
+export function activateWorkspacePage(selectedScene) {
+  setupHistoryInteraction();
+  setupWorkspaceInteraction(selectedScene);
+  setupGpuSummary();
+}
+
+export function renderWorkspacePage(
+  scenes,
+  selectedScene,
+  history = [],
+  mountTarget = document.getElementById("app"),
+  options = {},
+) {
+  const { deferSetup = false } = options;
   stopWorkflowAutoAdvance();
   document.title = `${selectedScene.name} | FocusGS Studio`;
 
-  document.getElementById("app").innerHTML = `
+  mountTarget.innerHTML = `
     <div class="layout studio-layout">
       <!-- 顶部栏 -->
       <header class="topbar">
         <div class="topbar__left">
-          <a href="/" class="back-home-link">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M19 12H5M5 12L12 19M5 12L12 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            FocusGS / 首页
+          <a class="home-nav-brand home-nav-brand--compact" href="/" aria-label="FocusGS Home">
+            <span class="home-nav-brand__logo-shell" aria-hidden="true">
+              <img class="home-nav-brand__logo home-nav-brand__logo--light" src="/logo.png" alt="" />
+              <img class="home-nav-brand__logo home-nav-brand__logo--dark" src="/logo-dark.png" alt="" />
+            </span>
+            <span class="home-nav-brand__text">
+              <span class="home-nav-brand__title">FocusGS</span>
+              <span class="home-nav-brand__subtitle">Memory-Efficient 3D Gaussian Splatting</span>
+            </span>
           </a>
-          <span class="divider"></span>
           <div class="topbar__title-wrapper">
              <p class="eyebrow">Studio Workspace</p>
              <h1>${selectedScene.name}</h1>
           </div>
         </div>
-        <div class="topbar__meta">
-          <span class="status-badge status--success">● Ready</span>
-        </div>
         <div class="topbar__actions">
+           ${buildPageSwitch(selectedScene.id, "workspace")}
            <button class="btn btn--icon theme-toggle-btn" onclick="toggleTheme()" title="切换主题">
              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
            </button>
-           <button class="btn btn--icon" title="重置视角功能占位" onclick="alert('重置视角占位')">
+           <button class="btn btn--icon" id="btn-reset-view" title="重置到初始视角" onclick="focusGSStudioResetView()">
              <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 3v5h5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
            </button>
-           <button class="btn btn--icon" title="全屏功能占位" onclick="alert('全屏占位')">
+           <button class="btn btn--icon" id="btn-toggle-fullscreen" title="全屏查看" onclick="focusGSStudioToggleFullscreen()">
              <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
            </button>
         </div>
@@ -929,14 +1344,14 @@ export function renderWorkspacePage(scenes, selectedScene, history = []) {
       <aside class="sidebar sidebar--right">
         
         <!-- 阶段时间线 -->
-        <section class="panel timeline-panel">
+        <section class="panel timeline-panel" id="timeline-panel" style="display: none;">
           <h2>阶段时间线</h2>
           <div class="timeline">
-             <div class="timeline-item is-success">
+             <div class="timeline-item is-pending">
                 <div class="timeline-marker"></div>
                 <div class="timeline-content">
                    <strong>准备上传</strong>
-                   <p>已完成 · 耗时 1 秒</p>
+                   <p>等待任务启动</p>
                 </div>
              </div>
              <div class="timeline-item is-pending">
@@ -977,40 +1392,34 @@ export function renderWorkspacePage(scenes, selectedScene, history = []) {
           <h2>指标 (Iteration ${selectedScene.iteration})</h2>
           <div class="metrics-grid">
              <div class="metric-item">
-                 <span class="metric-label">PSNR</span>
-                 <strong class="metric-val ${selectedScene.metrics?.psnr ? "" : "metric-tbd"}">${formatMetric(selectedScene.metrics?.psnr)}</strong>
+                 <span class="metric-label">PSNR↑</span>
+                 <strong class="metric-val ${selectedScene.metrics?.psnr ? "" : "metric-tbd"}">${formatMetricByType("psnr", selectedScene.metrics?.psnr)}</strong>
              </div>
              <div class="metric-item">
-                 <span class="metric-label">SSIM</span>
-                 <strong class="metric-val ${selectedScene.metrics?.ssim ? "" : "metric-tbd"}">${formatMetric(selectedScene.metrics?.ssim)}</strong>
+                 <span class="metric-label">SSIM↑</span>
+                 <strong class="metric-val ${selectedScene.metrics?.ssim ? "" : "metric-tbd"}">${formatMetricByType("ssim", selectedScene.metrics?.ssim)}</strong>
              </div>
              <div class="metric-item">
-                 <span class="metric-label">LPIPS</span>
-                 <strong class="metric-val ${selectedScene.metrics?.lpips ? "" : "metric-tbd"}">${formatMetric(selectedScene.metrics?.lpips)}</strong>
+                 <span class="metric-label">LPIPS↓</span>
+                 <strong class="metric-val ${selectedScene.metrics?.lpips ? "" : "metric-tbd"}">${formatMetricByType("lpips", selectedScene.metrics?.lpips)}</strong>
              </div>
           </div>
         </section>
 
-        <section class="panel code-panel">
-          <h2>结果说明</h2>
-          <p>缩略图/对比图占位区</p>
-        </section>
+        ${buildSceneHighlightPanel(selectedScene)}
 
         <section class="panel help-panel">
-          <h2>使用说明</h2>
-          <ul class="control-list">
-             <li><span class="control-key">Left Drag</span> <span>旋转轨道</span></li>
-             <li><span class="control-key">Right Drag</span> <span>平移视角</span></li>
-             <li><span class="control-key">Scroll</span> <span>缩放场景</span></li>
-          </ul>
+          <h2>性能摘要</h2>
+          ${buildPerformanceSummary()}
         </section>
       </aside>
     </div>
   `;
 
   // DOM 渲染完毕后绑定交互事件
-  setTimeout(() => {
-    setupHistoryInteraction();
-    setupWorkspaceInteraction();
-  }, 0);
+  if (!deferSetup) {
+    setTimeout(() => {
+      activateWorkspacePage(selectedScene);
+    }, 0);
+  }
 }
