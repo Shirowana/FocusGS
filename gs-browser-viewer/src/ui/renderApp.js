@@ -3,6 +3,7 @@
 import gardenHeroVideo from "../../figures/garden.mp4";
 import roomHeroVideo from "../../figures/room.mp4";
 import treehillHeroVideo from "../../figures/Treehill.mp4";
+import megs2OverviewImage from "../../figures/3e12860e6003878673d08e1b053c270c.png";
 
 let parallaxScrollListener = null;
 let parallaxResizeListener = null;
@@ -152,8 +153,6 @@ function buildTagList(tags = [], isSmall = false) {
   return tags.map((tag) => `<span class="tag ${isSmall ? "tag--small" : ""}">${tag}</span>`).join("");
 }
 
-const HOME_METHOD_BADGES = ["3DGS Core", "Memory-Efficient", "Web Demo"];
-
 const HERO_DEMO_VIDEOS = [
   {
     title: "Garden",
@@ -169,21 +168,6 @@ const HERO_DEMO_VIDEOS = [
     title: "Treehill",
     label: "Large-Scale Scene Browsing",
     src: treehillHeroVideo,
-  },
-];
-
-const HOME_METHOD_POINTS = [
-  {
-    title: "以 3DGS 作为重建与渲染主线",
-    copy: "保留 Gaussian Splatting 在高保真场景表达与实时浏览上的优势，聚焦真实三维重建成果的展示。",
-  },
-  {
-    title: "引入 MEGS² 的低显存优化思路",
-    copy: "通过更节省显存的策略，让训练与部署不再被高资源门槛完全限制，适配有限硬件条件。",
-  },
-  {
-    title: "把训练结果接进浏览器工作台",
-    copy: "从场景资产、结果管理到在线预览，FocusGS 让研究链路和可视化展示在一个页面中闭环。",
   },
 ];
 
@@ -296,12 +280,6 @@ function getScenePrimaryTag(scene) {
   return (scene.tags || []).find((tag) => tag !== "featured") || "scene";
 }
 
-function buildMethodBadges() {
-  return HOME_METHOD_BADGES
-    .map((badge) => `<span class="method-badge">${badge}</span>`)
-    .join("");
-}
-
 function buildHeroDemoStrip() {
   return HERO_DEMO_VIDEOS
     .map(
@@ -354,60 +332,10 @@ function buildPageSwitch(sceneId = "garden", activePage = "home") {
   `;
 }
 
-function buildMethodPoints() {
-  return HOME_METHOD_POINTS
-    .map(
-      (point) => `
-        <article class="method-point">
-          <h3>${point.title}</h3>
-          <p>${point.copy}</p>
-        </article>
-      `,
-    )
-    .join("");
-}
-
 function buildMethodVisual() {
   return `
     <div class="method-visual">
-      <div class="method-visual__frame" data-parallax-speed="0.09" data-parallax-max="56">
-        <div class="method-visual__header">
-          <span>FocusGS / Method Overview</span>
-          <strong>3DGS + MEGS²</strong>
-        </div>
-        <div class="method-visual__diagram">
-          <div class="method-node method-node--input">
-            <em>Input</em>
-            <strong>Multi-view Images</strong>
-          </div>
-          <div class="method-visual__arrow"></div>
-          <div class="method-node method-node--opt">
-            <em>Optimization</em>
-            <strong>Memory-Aware Training</strong>
-          </div>
-          <div class="method-visual__arrow"></div>
-          <div class="method-node method-node--viewer">
-            <em>Output</em>
-            <strong>Web Viewer</strong>
-          </div>
-        </div>
-        <div class="method-visual__compare">
-          <div class="method-compare-card">
-            <span>Vanilla 3DGS</span>
-            <div class="method-compare-bar method-compare-bar--high">
-              <i></i>
-            </div>
-            <strong>Higher VRAM Pressure</strong>
-          </div>
-          <div class="method-compare-card method-compare-card--accent">
-            <span>MEGS² Strategy</span>
-            <div class="method-compare-bar method-compare-bar--low">
-              <i></i>
-            </div>
-            <strong>More Training Headroom</strong>
-          </div>
-        </div>
-      </div>
+      <img class="method-visual__image" src="${megs2OverviewImage}" alt="MEGS² overview diagram" loading="lazy" />
     </div>
   `;
 }
@@ -1100,19 +1028,17 @@ export function renderHomePage(scenes) {
 
       <section class="method-section" id="method">
         <div class="method-layout">
-          <div class="method-copy">
-            <p class="section-kicker">Method Overview</p>
-            <h2>把 3DGS 主线、MEGS² 优化与 Web 展示放在同一条链路里。</h2>
-            <p class="method-lead">FocusGS 不是单纯的 viewer 包装层，而是围绕高质量三维重建建立的一套完整叙事：前端展示关注 3DGS 的最终可见效果，方法侧则借助 MEGS² 的思路降低显存压力。</p>
-            <div class="method-badges">
-              ${buildMethodBadges()}
-            </div>
-            <div class="method-points">
-              ${buildMethodPoints()}
-            </div>
+          <div class="section-header section-header--centered method-header">
+            <p class="section-kicker">METHOD OVERVIEW</p>
+            <h2>更轻的 3DGS：从渲染显存到结果文件</h2>
+            <p>FocusGS 结合 MEGS² 显存优化与轻量化高斯资产保存，在保证三维重建质量的同时，进一步降低运行负担与结果体积。</p>
           </div>
-          <div class="method-visual-shell">
+          <div class="method-visual-shell" data-parallax-speed="0.06" data-parallax-max="42">
             ${buildMethodVisual()}
+          </div>
+          <div class="method-summary">
+            <p>FocusGS 以 3D Gaussian Splatting 作为三维重建与渲染主线，并在此基础上结合两类关键优化。首先，在重建表示层面，我们引入 MEGS² 的思路，用更轻量的 Spherical Gaussian 颜色表示替代传统 SH，并结合统一剪枝策略，同时压缩 Gaussian primitive 的数量和单个 primitive 的参数量，从而降低训练与渲染过程中的显存压力。其次，在结果管理与展示层面，我们对训练得到的 Gaussian 结果进一步进行轻量化保存与格式转换，将原始 splat / 点云资产组织为更适合网页传输、快速加载与预览的轻量格式。基于这两部分设计，FocusGS 不仅关注 3DGS 的重建质量，也强调其在有限硬件条件下的运行效率和展示效率，从而形成一条从高质量重建到轻量化发布的完整技术链路。</p>
+            <p class="method-summary__closing">指标导向上，FocusGS 的目标是在尽量保持 PSNR / SSIM / LPIPS 表现的同时，进一步压低显存占用、结果体积与网页加载成本。</p>
           </div>
         </div>
       </section>
