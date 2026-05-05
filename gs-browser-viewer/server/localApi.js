@@ -29,6 +29,7 @@ const LOCAL_VIDEO_ROOTS = [
 const CONDA_BIN = process.env.FOCUSGS_CONDA_BIN || process.env.CONDA_EXE || "conda";
 const CONDA_ENV_NAME = process.env.FOCUSGS_CONDA_ENV || "focus";
 const PYTHON_BIN = process.env.FOCUSGS_PYTHON || null;
+const MAX_HISTORY_JOBS = 30;
 
 const jobStore = new Map();
 
@@ -71,6 +72,41 @@ async function getLatestPreviewInfo(job) {
     updatedAt: latest.updatedAt,
     filePath: latest.filePath,
     url: `/api/train/${job.id}/preview/point-cloud?iteration=${latest.iteration}&ts=${encodeURIComponent(latest.updatedAt)}`,
+  };
+}
+
+async function getCheckpointInfo(modelPath) {
+  let entries = [];
+  try {
+    entries = await fs.readdir(modelPath, { withFileTypes: true });
+  } catch {
+    return {
+      hasCheckpoint: false,
+      latestCheckpointIteration: null,
+      latestCheckpointPath: null,
+      checkpointIterations: [],
+    };
+  }
+
+  const checkpoints = [];
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const match = entry.name.match(/^chkpnt(\d+)\.pth$/i);
+    if (!match) continue;
+    checkpoints.push({
+      iteration: Number(match[1]),
+      filePath: path.join(modelPath, entry.name),
+    });
+  }
+
+  checkpoints.sort((left, right) => left.iteration - right.iteration);
+  const latest = checkpoints[checkpoints.length - 1] || null;
+
+  return {
+    hasCheckpoint: Boolean(latest),
+    latestCheckpointIteration: latest?.iteration || null,
+    latestCheckpointPath: latest?.filePath || null,
+    checkpointIterations: checkpoints.map((item) => item.iteration),
   };
 }
 
@@ -161,16 +197,16 @@ function getCandidateHints(payload = {}, manifest = []) {
   const sourceHint = String(payload.sourceHint || "").trim();
   const sceneNameHint = String(payload.sceneName || payload.sceneId || "").trim();
 
-  if (explicitPath) hints.add(explicitPath);
-  if (sourceHint && !shouldIgnoreFolderHint(sourceHint)) hints.add(sourceHint);
-  if (sceneNameHint && !shouldIgnoreFolderHint(sceneNameHint)) hints.add(sceneNameHint);
-
   for (const entry of manifest) {
     const rootSegment = sanitizePathSegments(entry.relativePath || entry.name || "")[0];
     if (rootSegment && !shouldIgnoreFolderHint(rootSegment)) {
       hints.add(rootSegment);
     }
   }
+
+  if (explicitPath) hints.add(explicitPath);
+  if (sourceHint && !shouldIgnoreFolderHint(sourceHint)) hints.add(sourceHint);
+  if (sceneNameHint && !shouldIgnoreFolderHint(sceneNameHint)) hints.add(sceneNameHint);
 
   return Array.from(hints);
 }
@@ -196,6 +232,12 @@ async function resolveLocalColmapSource(payload = {}, manifest = []) {
   }
 
   throw new Error(`无法根据当前场景定位本地数据目录。已尝试：${hints.join(" / ") || "无有效线索"}`);
+}
+
+function inferResolvedSceneName(targetPath = "", fallback = "") {
+  const basename = path.basename(String(targetPath || "").trim());
+  const normalized = normalizeSceneFolderHint(basename);
+  return normalized || String(fallback || "").trim() || "unnamed-scene";
 }
 
 async function resolveLocalImageSource(payload = {}, manifest = []) {
@@ -268,6 +310,14 @@ function toPublicJob(job) {
     logTail: job.logTail || [],
     trainingProgress: job.trainingProgress || null,
     preview: job.preview || null,
+    hasCheckpoint: Boolean(job.hasCheckpoint),
+    latestCheckpointIteration: job.latestCheckpointIteration || null,
+    latestCheckpointPath: job.latestCheckpointPath || null,
+    checkpointIterations: Array.isArray(job.checkpointIterations) ? job.checkpointIterations : [],
+    parentJobId: job.parentJobId || null,
+    resumeFromCheckpoint: job.resumeFromCheckpoint || null,
+    resumeFromIteration: job.resumeFromIteration || null,
+    resumeOutputMode: job.resumeOutputMode || null,
   };
 }
 
@@ -510,6 +560,9 @@ async function writeUploadedFiles(formData, manifest = [], workspacePath) {
 
 function buildTrainArgs(job) {
   const params = job.parameterValues || {};
+  const iterations = Number(params.iterations) || 30000;
+  const saveInterval = iterations;
+  const checkpointIterations = [iterations];
   const args = [
     MEGS2_TRAIN_SCRIPT,
     "-s",
@@ -519,9 +572,9 @@ function buildTrainArgs(job) {
     "-i",
     job.inputImageDir || "images",
     "--iterations",
-    String(Number(params.iterations) || 30000),
+    String(iterations),
     "--save_iterations",
-    String(Number(params.save_interval) || 5000),
+    String(saveInterval),
     "--feature_lr",
     String(Number(params.feature_lr) || 0.0025),
     "--scaling_lr",
@@ -556,6 +609,14 @@ function buildTrainArgs(job) {
     job.impMetric,
   ];
 
+  if (checkpointIterations.length) {
+    args.push("--checkpoint_iterations", ...checkpointIterations.map((value) => String(value)));
+  }
+
+  if (job.resumeFromCheckpoint) {
+    args.push("--start_checkpoint", job.resumeFromCheckpoint);
+  }
+
   return args;
 }
 
@@ -582,6 +643,11 @@ function resolveTrainingLaunchCommand(job) {
 
 async function persistJobArtifacts(job) {
   job.preview = await getLatestPreviewInfo(job);
+  const checkpointInfo = await getCheckpointInfo(job.modelPath);
+  job.hasCheckpoint = checkpointInfo.hasCheckpoint;
+  job.latestCheckpointIteration = checkpointInfo.latestCheckpointIteration;
+  job.latestCheckpointPath = checkpointInfo.latestCheckpointPath;
+  job.checkpointIterations = checkpointInfo.checkpointIterations;
   await fs.writeFile(path.join(job.rootPath, "job.json"), JSON.stringify({
     id: job.id,
     mode: job.mode,
@@ -594,6 +660,14 @@ async function persistJobArtifacts(job) {
     impMetric: job.impMetric,
     sourcePath: job.sourcePath || job.workspacePath,
     sourceStrategy: job.sourceStrategy || "upload-copy",
+    hasCheckpoint: job.hasCheckpoint,
+    latestCheckpointIteration: job.latestCheckpointIteration || null,
+    latestCheckpointPath: job.latestCheckpointPath || null,
+    checkpointIterations: job.checkpointIterations || [],
+    parentJobId: job.parentJobId || null,
+    resumeFromCheckpoint: job.resumeFromCheckpoint || null,
+    resumeFromIteration: job.resumeFromIteration || null,
+    resumeOutputMode: job.resumeOutputMode || null,
   }, null, 2));
 
   await fs.writeFile(path.join(job.rootPath, "status.json"), JSON.stringify(toPublicJob(job), null, 2));
@@ -612,6 +686,200 @@ async function readLogs(job) {
   } catch {
     return "";
   }
+}
+
+function formatJobDuration(startAt, endAt) {
+  const start = startAt ? new Date(startAt).getTime() : Number.NaN;
+  const end = endAt ? new Date(endAt).getTime() : Number.NaN;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return "—";
+  const totalSeconds = Math.max(1, Math.round((end - start) / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  const hours = Math.floor(minutes / 60);
+  const remainMinutes = minutes % 60;
+  if (hours > 0) {
+    return `${hours}h ${remainMinutes}m`;
+  }
+  return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+}
+
+async function loadStoredJob(jobId) {
+  const liveJob = jobStore.get(jobId);
+  if (liveJob) return liveJob;
+
+  const rootPath = path.join(JOBS_ROOT, jobId);
+  const statusPath = path.join(rootPath, "status.json");
+  const jobPath = path.join(rootPath, "job.json");
+
+  try {
+    const [statusRaw, jobRaw] = await Promise.all([
+      fs.readFile(statusPath, "utf8"),
+      fs.readFile(jobPath, "utf8"),
+    ]);
+    const status = JSON.parse(statusRaw);
+    const persisted = JSON.parse(jobRaw);
+    return {
+      id: persisted.id || status.id || jobId,
+      mode: persisted.mode || status.mode || "colmap",
+      sceneName: persisted.sceneName || status.sceneName || "unnamed-scene",
+      selectionSummary: persisted.selectionSummary || status.selectionSummary || "",
+      launcher: persisted.launcher || status.launcher || "",
+      parameterValues: persisted.parameterValues || status.parameterValues || {},
+      inputImageDir: persisted.inputImageDir || status.inputImageDir || "images",
+      sparseRoot: persisted.sparseRoot || status.sparseRoot || "sparse/0",
+      impMetric: persisted.impMetric || "indoor",
+      sourcePath: persisted.sourcePath || status.sourcePath || status.workspacePath,
+      sourceStrategy: persisted.sourceStrategy || status.sourceStrategy || "local-path",
+      workspacePath: status.workspacePath || persisted.sourcePath || "",
+      modelPath: status.modelPath || path.join(rootPath, "output"),
+      logPath: status.logPath || path.join(rootPath, "logs", "train.log"),
+      rootPath,
+      createdAt: status.createdAt || null,
+      updatedAt: status.updatedAt || null,
+      state: status.state || "unknown",
+      stage: status.stage || "unknown",
+      message: status.message || "",
+      timeline: status.timeline || getTimelineByMode(persisted.mode || status.mode || "colmap"),
+      exitCode: status.exitCode ?? null,
+      error: status.error || null,
+      logTail: status.logTail || [],
+      trainingProgress: status.trainingProgress || createInitialTrainingProgress({ parameterValues: persisted.parameterValues || status.parameterValues || {} }),
+      preview: status.preview || null,
+      hasCheckpoint: Boolean(status.hasCheckpoint || persisted.hasCheckpoint),
+      latestCheckpointIteration: status.latestCheckpointIteration || persisted.latestCheckpointIteration || null,
+      latestCheckpointPath: status.latestCheckpointPath || persisted.latestCheckpointPath || null,
+      checkpointIterations: status.checkpointIterations || persisted.checkpointIterations || [],
+      parentJobId: status.parentJobId || persisted.parentJobId || null,
+      resumeFromCheckpoint: status.resumeFromCheckpoint || persisted.resumeFromCheckpoint || null,
+      resumeFromIteration: status.resumeFromIteration || persisted.resumeFromIteration || null,
+      resumeOutputMode: status.resumeOutputMode || persisted.resumeOutputMode || null,
+      process: null,
+      outputBuffer: "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function resolveJobForApi(jobId) {
+  const job = await loadStoredJob(jobId);
+  if (!job) return null;
+
+  if (!jobStore.has(job.id)) {
+    jobStore.set(job.id, job);
+  }
+
+  if (
+    !job.process
+    && ["running", "queued", "cancelling"].includes(job.state)
+  ) {
+    await updateJob(job, {
+      state: "failed",
+      stage: "failed",
+      message: "训练状态已失联",
+      error: "本地开发服务重启或中断，原训练进程状态无法继续追踪。",
+      trainingProgress: {
+        ...(job.trainingProgress || createInitialTrainingProgress(job)),
+        phase: "训练状态已失联",
+        detail: "本地开发服务重启或中断，原训练进程状态无法继续追踪。",
+      },
+    });
+  }
+
+  return job;
+}
+
+async function listHistoricalJobs(sceneName = "") {
+  let jobDirs = [];
+  try {
+    jobDirs = await fs.readdir(JOBS_ROOT, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const normalizedFilter = normalizeSceneFolderHint(sceneName);
+  const results = [];
+
+  for (const entry of jobDirs) {
+    if (!entry.isDirectory()) continue;
+    const loaded = await loadStoredJob(entry.name);
+    if (!loaded) continue;
+
+    const checkpointInfo = await getCheckpointInfo(loaded.modelPath);
+    loaded.hasCheckpoint = checkpointInfo.hasCheckpoint;
+    loaded.latestCheckpointIteration = checkpointInfo.latestCheckpointIteration;
+    loaded.latestCheckpointPath = checkpointInfo.latestCheckpointPath;
+    loaded.checkpointIterations = checkpointInfo.checkpointIterations;
+
+    if (normalizedFilter && normalizeSceneFolderHint(loaded.sceneName) !== normalizedFilter) {
+      continue;
+    }
+
+    const canResume = ["success", "failed", "cancelled"].includes(loaded.state) && loaded.hasCheckpoint;
+    results.push({
+      id: loaded.id,
+      runName: loaded.parentJobId ? `${loaded.sceneName}-resume` : loaded.sceneName,
+      sceneName: loaded.sceneName,
+      mode: loaded.mode,
+      state: loaded.state,
+      status: loaded.state,
+      stage: loaded.stage,
+      message: loaded.message,
+      error: loaded.error,
+      createdAt: loaded.createdAt,
+      updatedAt: loaded.updatedAt,
+      duration: formatJobDuration(loaded.createdAt, loaded.updatedAt),
+      inputImageDir: loaded.inputImageDir,
+      sparseRoot: loaded.sparseRoot,
+      sourcePath: loaded.sourcePath || loaded.workspacePath,
+      parameterValues: loaded.parameterValues || {},
+      currentIteration: loaded.trainingProgress?.currentIteration || 0,
+      totalIterations: loaded.trainingProgress?.totalIterations || Number(loaded.parameterValues?.iterations) || 30000,
+      latestCheckpointIteration: loaded.latestCheckpointIteration,
+      checkpointIterations: loaded.checkpointIterations || [],
+      hasCheckpoint: loaded.hasCheckpoint,
+      canResume,
+      parentJobId: loaded.parentJobId || null,
+      resumeFromIteration: loaded.resumeFromIteration || null,
+      preview: loaded.preview || null,
+      logTail: loaded.logTail || [],
+      trainingProgress: loaded.trainingProgress || null,
+    });
+  }
+
+  results.sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime());
+  return results;
+}
+
+async function pruneOldJobs() {
+  let jobDirs = [];
+  try {
+    jobDirs = await fs.readdir(JOBS_ROOT, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  const loadedJobs = [];
+  for (const entry of jobDirs) {
+    if (!entry.isDirectory()) continue;
+    const loaded = await loadStoredJob(entry.name);
+    if (!loaded) continue;
+    loadedJobs.push(loaded);
+  }
+
+  loadedJobs.sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime());
+  const removableJobs = loadedJobs
+    .filter((job) => !["running", "queued", "cancelling"].includes(job.state))
+    .slice(MAX_HISTORY_JOBS);
+
+  await Promise.all(removableJobs.map(async (job) => {
+    jobStore.delete(job.id);
+    try {
+      await fs.rm(job.rootPath, { recursive: true, force: true });
+    } catch {
+      // ignore prune failures so listing/training stays available
+    }
+  }));
 }
 
 async function verifyTrainingRuntime() {
@@ -701,7 +969,7 @@ async function runColmapTrainingJob(job) {
     });
   });
 
-  child.on("close", async (code) => {
+  child.on("close", async (code, signal) => {
     if (finalized) return;
     finalized = true;
     await flushTrainingOutputBuffer(job);
@@ -754,6 +1022,26 @@ async function runColmapTrainingJob(job) {
       return;
     }
 
+    if (signal) {
+      const signalReason =
+        signal === "SIGKILL"
+          ? "训练进程被系统强制终止，常见原因是内存不足（OOM）"
+          : `训练进程被信号 ${signal} 终止`;
+      await updateJob(job, {
+        state: "failed",
+        stage: "failed",
+        message: "训练失败",
+        exitCode: code,
+        error: `[${job.launcher}] ${signalReason}`,
+        trainingProgress: {
+          ...(job.trainingProgress || createInitialTrainingProgress(job)),
+          phase: "训练失败",
+          detail: signalReason,
+        },
+      });
+      return;
+    }
+
     await updateJob(job, {
       state: "failed",
       stage: "failed",
@@ -770,7 +1058,7 @@ async function runColmapTrainingJob(job) {
 }
 
 async function cancelTrainingJob(jobId) {
-  const job = jobStore.get(jobId);
+  const job = await resolveJobForApi(jobId);
   if (!job) {
     return { ok: false, statusCode: 404, message: "Job not found" };
   }
@@ -887,11 +1175,15 @@ async function createTrainingJob(formData) {
     sourceStrategy === "local-path"
       ? `已定位本地 COLMAP 工程：${workspacePath}`
       : "任务已创建，等待训练启动";
+  const resolvedSceneName =
+    sourceStrategy === "local-path"
+      ? inferResolvedSceneName(workspacePath, payload.sceneName)
+      : (payload.sceneName || "unnamed-scene");
 
   const job = {
     id: jobId,
     mode: payload.mode,
-    sceneName: payload.sceneName || "unnamed-scene",
+    sceneName: resolvedSceneName,
     selectionSummary: payload.selectionSummary || "已接收训练输入",
     parameterValues: payload.parameterValues || {},
     inputImageDir,
@@ -930,6 +1222,104 @@ async function createTrainingJob(formData) {
 
   jobStore.set(jobId, job);
   await persistJobArtifacts(job);
+  await pruneOldJobs();
+  await runColmapTrainingJob(job);
+  return job;
+}
+
+async function createResumeTrainingJob(formData) {
+  const payload = JSON.parse(String(formData.get("payload") || "{}"));
+  const parentJobId = String(payload.parentJobId || "").trim();
+  if (!parentJobId) {
+    throw new Error("缺少续训来源任务。");
+  }
+
+  const parentJob = await loadStoredJob(parentJobId);
+  if (!parentJob) {
+    throw new Error("未找到续训来源任务。");
+  }
+
+  const checkpointIteration = Number(payload.resumeIteration);
+  const additionalIterations = Number(payload.additionalIterations);
+  if (!Number.isFinite(checkpointIteration) || checkpointIteration <= 0) {
+    throw new Error("续训 checkpoint 迭代数无效。");
+  }
+  if (!Number.isFinite(additionalIterations) || additionalIterations <= 0) {
+    throw new Error("追加训练轮数无效。");
+  }
+
+  const checkpointPath = path.join(parentJob.modelPath, `chkpnt${checkpointIteration}.pth`);
+  await fs.access(checkpointPath);
+
+  const outputMode = payload.outputMode === "reuse-dir" ? "reuse-dir" : "new-dir";
+  const jobId = randomUUID();
+  const rootPath = path.join(JOBS_ROOT, jobId);
+  await ensureJobScaffold(rootPath);
+
+  const mergedParameters = {
+    ...(parentJob.parameterValues || {}),
+    ...(payload.parameterValues || {}),
+    iterations: checkpointIteration + additionalIterations,
+  };
+
+  const modelPath =
+    outputMode === "reuse-dir"
+      ? parentJob.modelPath
+      : path.join(rootPath, "output");
+  if (outputMode === "reuse-dir") {
+    await fs.mkdir(modelPath, { recursive: true });
+  }
+
+  const job = {
+    id: jobId,
+    mode: parentJob.mode,
+    sceneName: parentJob.sceneName,
+    selectionSummary: `断点续训：${parentJob.sceneName} · checkpoint ${checkpointIteration}`,
+    parameterValues: mergedParameters,
+    inputImageDir: parentJob.inputImageDir,
+    sparseRoot: parentJob.sparseRoot,
+    impMetric: parentJob.impMetric || "indoor",
+    rootPath,
+    workspacePath: parentJob.workspacePath,
+    sourcePath: parentJob.sourcePath || parentJob.workspacePath,
+    sourceStrategy: parentJob.sourceStrategy || "local-path",
+    modelPath,
+    logPath: path.join(rootPath, "logs", "train.log"),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    state: "queued",
+    stage: "queued",
+    message: `已创建续训任务：iteration ${checkpointIteration} -> ${checkpointIteration + additionalIterations}`,
+    timeline: [
+      "已检查到历史 checkpoint",
+      "MEGS² 训练",
+      "结果导出",
+    ],
+    process: null,
+    launcher: PYTHON_BIN ? `python:${PYTHON_BIN}` : `conda:${CONDA_ENV_NAME}`,
+    exitCode: null,
+    error: null,
+    logTail: [],
+    trainingProgress: null,
+    outputBuffer: "",
+    parentJobId,
+    resumeFromCheckpoint: checkpointPath,
+    resumeFromIteration: checkpointIteration,
+    resumeOutputMode: outputMode,
+  };
+
+  job.trainingProgress = {
+    ...createInitialTrainingProgress(job),
+    phase: "已检查到历史 checkpoint",
+    percent: 8,
+    currentIteration: checkpointIteration,
+    totalIterations: checkpointIteration + additionalIterations,
+    detail: `续训起点 iteration ${checkpointIteration}`,
+  };
+
+  jobStore.set(jobId, job);
+  await persistJobArtifacts(job);
+  await pruneOldJobs();
   await runColmapTrainingJob(job);
   return job;
 }
@@ -948,7 +1338,7 @@ async function handleCreateTraining(req, res) {
 }
 
 async function handleGetTraining(jobId, res) {
-  const job = jobStore.get(jobId);
+  const job = await resolveJobForApi(jobId);
   if (!job) {
     json(res, 404, { ok: false, message: "Job not found" });
     return;
@@ -957,7 +1347,7 @@ async function handleGetTraining(jobId, res) {
 }
 
 async function handleGetTrainingLogs(jobId, res) {
-  const job = jobStore.get(jobId);
+  const job = await resolveJobForApi(jobId);
   if (!job) {
     json(res, 404, { ok: false, message: "Job not found" });
     return;
@@ -967,7 +1357,7 @@ async function handleGetTrainingLogs(jobId, res) {
 }
 
 async function handleGetTrainingPreview(jobId, req, res) {
-  const job = jobStore.get(jobId);
+  const job = await resolveJobForApi(jobId);
   if (!job) {
     json(res, 404, { ok: false, message: "Job not found" });
     return;
@@ -991,6 +1381,27 @@ async function handleGetTrainingPreview(jobId, req, res) {
   res.setHeader("Content-Type", "application/octet-stream");
   res.setHeader("Cache-Control", "no-store");
   fsSync.createReadStream(filePath).pipe(res);
+}
+
+async function handleListTrainingHistory(req, res) {
+  const url = new URL(req.url || "/", "http://127.0.0.1");
+  const sceneName = String(url.searchParams.get("scene") || "").trim();
+  await pruneOldJobs();
+  const jobs = await listHistoricalJobs(sceneName);
+  json(res, 200, { ok: true, jobs });
+}
+
+async function handleResumeTraining(req, res) {
+  try {
+    const formData = await parseMultipartFormData(req);
+    const job = await createResumeTrainingJob(formData);
+    json(res, 200, { ok: true, job: toPublicJob(job) });
+  } catch (error) {
+    json(res, 400, {
+      ok: false,
+      message: error instanceof Error ? error.message : "Failed to resume training job",
+    });
+  }
 }
 
 function createRouteMatcher(url) {
@@ -1026,6 +1437,16 @@ export function createLocalApiMiddleware() {
 
     if (url.pathname === "/api/train/create" && req.method === "POST") {
       await handleCreateTraining(req, res);
+      return;
+    }
+
+    if (url.pathname === "/api/train/history" && req.method === "GET") {
+      await handleListTrainingHistory(req, res);
+      return;
+    }
+
+    if (url.pathname === "/api/train/resume" && req.method === "POST") {
+      await handleResumeTraining(req, res);
       return;
     }
 

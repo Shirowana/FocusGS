@@ -3214,7 +3214,7 @@ section {
   transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .history-item.is-open .history-item__detail {
-  max-height: 200px;
+  max-height: 420px;
 }
 
 /* 详情内容 */
@@ -3256,11 +3256,51 @@ section {
   text-align: center;
 }
 
+.history-detail__summary {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.history-detail__summary p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.history-detail__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.history-detail__chips span {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--text-main);
+  background: rgba(15, 23, 42, 0.06);
+  border: 1px solid var(--panel-border);
+}
+
 /* 底部操作行：状态标签 + 加载按钮 */
 .history-detail__footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.history-detail__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex-wrap: wrap;
 }
 
 /* 状态文字标签 */
@@ -3287,6 +3327,116 @@ section {
   color: var(--text-muted);
   font-size: 13px;
   opacity: 0.6;
+}
+
+.history-resume-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: none;
+}
+
+.history-resume-modal.is-visible {
+  display: block;
+}
+
+.history-resume-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.38);
+  backdrop-filter: blur(8px);
+}
+
+.history-resume-modal__dialog {
+  position: relative;
+  width: min(560px, calc(100vw - 32px));
+  margin: 10vh auto 0;
+  border-radius: 24px;
+  padding: 24px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248, 250, 252, 0.98) 100%);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  box-shadow: 0 28px 60px rgba(15, 23, 42, 0.22);
+}
+
+.history-resume-modal__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.history-resume-modal__eyebrow {
+  margin: 0 0 6px;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.history-resume-modal__head h3 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.1;
+  color: var(--text-main);
+}
+
+.history-resume-modal__close {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid var(--panel-border);
+  background: rgba(255,255,255,0.72);
+  color: var(--text-main);
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.history-resume-modal__body {
+  display: grid;
+  gap: 14px;
+}
+
+.history-resume-modal__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(59, 130, 246, 0.06);
+  border: 1px solid rgba(59, 130, 246, 0.12);
+}
+
+.history-resume-modal__meta span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.history-resume-modal__meta strong {
+  font-size: 13px;
+  color: var(--text-main);
+}
+
+.history-resume-modal__field {
+  display: grid;
+  gap: 6px;
+}
+
+.history-resume-modal__field label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.history-resume-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.history-resume-modal__cancel {
+  background: linear-gradient(135deg, rgba(148, 163, 184, 0.82) 0%, rgba(100, 116, 139, 0.9) 100%);
 }
 
 /** ----------------------------
@@ -3990,6 +4140,33 @@ section {
 
 [data-theme="dark"] .workspace-params-submit:disabled {
   background: linear-gradient(135deg, rgba(59, 130, 246, 0.34) 0%, rgba(96, 165, 250, 0.28) 100%);
+}
+
+[data-theme="dark"] .history-detail__chips span {
+  background: rgba(15, 23, 42, 0.76);
+  border-color: rgba(148, 163, 184, 0.12);
+  color: #eef5ff;
+}
+
+[data-theme="dark"] .history-resume-modal__dialog {
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.98) 0%, rgba(8, 15, 28, 0.98) 100%);
+  border-color: rgba(148, 163, 184, 0.12);
+  box-shadow: 0 30px 60px rgba(2, 6, 23, 0.46);
+}
+
+[data-theme="dark"] .history-resume-modal__head h3 {
+  color: #eef5ff;
+}
+
+[data-theme="dark"] .history-resume-modal__close {
+  background: rgba(15, 23, 42, 0.76);
+  border-color: rgba(148, 163, 184, 0.14);
+  color: #eef5ff;
+}
+
+[data-theme="dark"] .history-resume-modal__meta {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(96, 165, 250, 0.14);
 }
 
 [data-theme="dark"] .training-runtime-item {

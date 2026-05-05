@@ -16,6 +16,10 @@ import assetCardCImage from "../../figures/C_transparent.png";
 
 const ACTIVE_WORKSPACE_JOB_STORAGE_KEY = "focusgs-active-workspace-job";
 
+window.focusGSWorkspaceRuntime = window.focusGSWorkspaceRuntime || {
+  jobStatus: "idle",
+};
+
 let parallaxScrollListener = null;
 let parallaxResizeListener = null;
 let parallaxFrameId = 0;
@@ -148,6 +152,8 @@ function getStatusMeta(status) {
     running: { cls: "status-dot--running", label: "运行中" },
     failed:  { cls: "status-dot--failed",  label: "失败" },
     queued:  { cls: "status-dot--queued",  label: "排队中" },
+    cancelled: { cls: "status-dot--cancelled", label: "已中断" },
+    cancelling: { cls: "status-dot--cancelled", label: "中断中" },
   };
   return map[status] || { cls: "", label: status };
 }
@@ -1398,7 +1404,9 @@ async function refreshGpuSummary() {
   if (!memoryEl || !utilEl || !fpsEl) return;
 
   const liveFps = Number(window.focusGSRuntimeStats?.fps);
-  fpsEl.textContent = Number.isFinite(liveFps) && liveFps > 0 ? `${liveFps}` : "--";
+  const jobStatus = window.focusGSWorkspaceRuntime?.jobStatus || "idle";
+  const isTrainingJob = jobStatus === "queued" || jobStatus === "running" || jobStatus === "cancelling";
+  fpsEl.textContent = !isTrainingJob && Number.isFinite(liveFps) && liveFps > 0 ? `${liveFps}` : "--";
 
   try {
     const response = await fetch("/api/local-gpu", { cache: "no-store" });
@@ -1418,7 +1426,7 @@ async function refreshGpuSummary() {
 
     if (refreshCopyEl) {
       const stamp = new Date(payload.timestamp);
-      const fpsText = Number.isFinite(liveFps) && liveFps > 0 ? ` · FPS ${liveFps}` : "";
+      const fpsText = !isTrainingJob && Number.isFinite(liveFps) && liveFps > 0 ? ` · FPS ${liveFps}` : "";
       refreshCopyEl.textContent = `上次刷新 ${stamp.getHours().toString().padStart(2, "0")}:${stamp.getMinutes().toString().padStart(2, "0")}:${stamp.getSeconds().toString().padStart(2, "0")}${fpsText}`;
     }
   } catch (error) {
@@ -1605,18 +1613,36 @@ function buildHistoryPanel(tasks) {
   const rows = tasks
     .map((task) => {
       const { cls, label } = getStatusMeta(task.status);
-      const hasMetrics = task.metrics && task.status === "success";
-
-      // 指标预览（仅 success 才展示）
-      const metricsHtml = hasMetrics
+      const currentIteration = Number(task.currentIteration) || 0;
+      const totalIterations = Number(task.totalIterations) || Number(task.parameterValues?.iterations) || 30000;
+      const progressLabel = currentIteration > 0 ? `${currentIteration} / ${totalIterations} iter` : `${totalIterations} iter`;
+      const checkpointLabel = task.hasCheckpoint
+        ? `checkpoint ${task.latestCheckpointIteration || "可用"}`
+        : "无 checkpoint";
+      const errorText = task.error || task.message || "无可用日志摘要";
+      const parameterSummary = [
+        task.inputImageDir ? `图像目录 ${task.inputImageDir}` : null,
+        task.sparseRoot ? `稀疏模型 ${task.sparseRoot}` : null,
+        task.mode ? `输入 ${task.mode}` : null,
+      ].filter(Boolean);
+      const metricsHtml = `
+        <div class="history-detail__metrics">
+          <span><em>进度</em>${progressLabel}</span>
+          <span><em>状态</em>${label}</span>
+          <span><em>续训</em>${checkpointLabel}</span>
+        </div>
+      `;
+      const detailText = task.status === "failed"
+        ? errorText
+        : task.message || "任务已完成，可查看输出结果。";
+      const actionButton = task.canResume
         ? `
-          <div class="history-detail__metrics">
-            <span><em>PSNR</em>${task.metrics.psnr}</span>
-            <span><em>SSIM</em>${task.metrics.ssim}</span>
-            <span><em>LPIPS</em>${task.metrics.lpips}</span>
-          </div>
+          <button class="btn btn--xs btn--ghost history-action-btn" type="button" data-history-action="resume" data-job-id="${task.id}">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3.2-6.9"/><polyline points="21 3 21 9 15 9"/></svg>
+            断点续训
+          </button>
         `
-        : `<p class="history-detail__no-metric">无可用指标</p>`;
+        : "";
 
       return `
         <div class="history-item" data-id="${task.id}">
@@ -1624,9 +1650,9 @@ function buildHistoryPanel(tasks) {
             <span class="status-dot ${cls}" title="${label}"></span>
             <div class="history-item__info">
               <strong class="history-item__name">${task.runName}</strong>
-              <span class="history-item__meta">${task.iteration / 1000}k iter · ${task.duration || "—"}</span>
+              <span class="history-item__meta">${progressLabel} · ${task.duration || "—"}</span>
             </div>
-            <span class="history-item__date">${formatDate(task.startTime)}</span>
+            <span class="history-item__date">${formatDate(task.createdAt)}</span>
             <button class="history-item__toggle" aria-label="展开详情">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
             </button>
@@ -1634,12 +1660,15 @@ function buildHistoryPanel(tasks) {
           <div class="history-item__detail">
             <div class="history-detail__inner">
               ${metricsHtml}
+              <div class="history-detail__summary">
+                <p>${detailText}</p>
+                <div class="history-detail__chips">${parameterSummary.map((item) => `<span>${item}</span>`).join("")}</div>
+              </div>
               <div class="history-detail__footer">
                 <span class="history-detail__status status-pill--${task.status}">${label}</span>
-                <button class="btn btn--xs btn--ghost" onclick="alert('加载此结果：${task.runName}（占位）')">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                  加载此结果
-                </button>
+                <div class="history-detail__actions">
+                  ${actionButton}
+                </div>
               </div>
             </div>
           </div>
@@ -1653,26 +1682,69 @@ function buildHistoryPanel(tasks) {
 
 // ---- 绑定历史任务的展开/折叠交互 ----
 function setupHistoryInteraction() {
-  const list = document.querySelector(".history-list");
-  if (!list) return;
+  const panel = document.querySelector(".history-panel");
+  if (!panel || panel.dataset.boundHistory === "true") return;
+  panel.dataset.boundHistory = "true";
 
-  list.addEventListener("click", (e) => {
-    // 点击整行（不含 btn--xs 的加载按钮）时触发展开
+  panel.addEventListener("click", (e) => {
     const toggleBtn = e.target.closest(".history-item__toggle");
     const row = e.target.closest(".history-item__row");
     if (!toggleBtn && !row) return;
-    // 如果点击的是"加载此结果"按钮，不触发展开
-    if (e.target.closest(".btn--xs")) return;
+    if (e.target.closest(".history-action-btn")) return;
 
     const item = e.target.closest(".history-item");
     if (!item) return;
 
     const isOpen = item.classList.contains("is-open");
-    // 关闭所有已打开的项
-    list.querySelectorAll(".history-item.is-open").forEach((el) => el.classList.remove("is-open"));
-    // 切换当前项
+    panel.querySelectorAll(".history-item.is-open").forEach((el) => el.classList.remove("is-open"));
     if (!isOpen) item.classList.add("is-open");
   });
+}
+
+function buildResumeDialog(task) {
+  const latestIteration = Number(task?.latestCheckpointIteration) || 0;
+  const defaultAdditionalIterations = 5000;
+  return `
+    <div class="history-resume-modal is-visible" id="history-resume-modal" aria-hidden="false">
+      <div class="history-resume-modal__backdrop" data-history-modal-close="true"></div>
+      <div class="history-resume-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="history-resume-title">
+        <div class="history-resume-modal__head">
+          <div>
+            <p class="history-resume-modal__eyebrow">RESUME TRAINING</p>
+            <h3 id="history-resume-title">${task.runName}</h3>
+          </div>
+          <button type="button" class="history-resume-modal__close" data-history-modal-close="true" aria-label="关闭">×</button>
+        </div>
+        <div class="history-resume-modal__body">
+          <div class="history-resume-modal__meta">
+            <span>当前可续训 checkpoint</span>
+            <strong>iteration ${latestIteration || "--"}</strong>
+          </div>
+          <div class="history-resume-modal__field">
+            <label for="resume-iteration-select">续训起点</label>
+            <select id="resume-iteration-select" class="workspace-params-input">
+              ${(task.checkpointIterations || []).map((iteration) => `<option value="${iteration}" ${iteration === latestIteration ? "selected" : ""}>iteration ${iteration}</option>`).join("")}
+            </select>
+          </div>
+          <div class="history-resume-modal__field">
+            <label for="resume-additional-iterations">追加训练轮数</label>
+            <input id="resume-additional-iterations" class="workspace-params-input" type="number" min="1000" step="1000" value="${defaultAdditionalIterations}" />
+          </div>
+          <div class="history-resume-modal__field">
+            <label for="resume-output-mode">输出方式</label>
+            <select id="resume-output-mode" class="workspace-params-input">
+              <option value="new-dir" selected>新建续训输出目录</option>
+              <option value="reuse-dir">复用原输出目录</option>
+            </select>
+          </div>
+        </div>
+        <div class="history-resume-modal__actions">
+          <button type="button" class="workspace-params-submit history-resume-modal__cancel" data-history-modal-close="true">取消</button>
+          <button type="button" class="workspace-params-submit" id="history-resume-submit" data-job-id="${task.id}">开始续训</button>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function getTimelineItemStatusClass(status = "pending") {
@@ -2045,6 +2117,8 @@ function setupWorkspaceInteraction(selectedScene) {
     submissionAbortController: null,
     previewIteration: null,
     previewReady: false,
+    historyTasks: [],
+    resumeSubmitting: false,
   };
 
   // 1. 中间 Viewer/Log Tabs 切换
@@ -2068,6 +2142,9 @@ function setupWorkspaceInteraction(selectedScene) {
   const sceneNameInput = document.getElementById("workspace-scene-name");
   const folderInput = document.getElementById("workspace-folder-input");
   const videoInput = document.getElementById("workspace-video-input");
+  const historyPanelContent = document.getElementById("history-panel-content");
+  const historyCount = document.getElementById("history-count");
+  const historyModalRoot = document.getElementById("history-modal-root");
 
   function getWorkspaceParameterContext() {
     return {
@@ -2077,6 +2154,15 @@ function setupWorkspaceInteraction(selectedScene) {
 
   function getWorkspaceSceneName() {
     return sceneNameInput?.value?.trim() || selectedScene.id;
+  }
+
+  function getResolvedWorkspaceSceneName(fallback = "") {
+    return (
+      workspaceState.runtimeMeta?.resolved_scene_name
+      || workspaceState.selectionMeta?.rootName
+      || fallback
+      || getWorkspaceSceneName()
+    );
   }
 
   function hasActiveWorkspaceJob() {
@@ -2090,6 +2176,28 @@ function setupWorkspaceInteraction(selectedScene) {
   function clearActiveWorkspaceJob() {
     workspaceState.activeJobId = null;
     persistActiveWorkspaceJobId("");
+  }
+
+  function updateHistoryPanel(tasks = workspaceState.historyTasks) {
+    workspaceState.historyTasks = Array.isArray(tasks) ? tasks : [];
+    if (historyPanelContent) {
+      historyPanelContent.innerHTML = buildHistoryPanel(workspaceState.historyTasks);
+    }
+    if (historyCount) {
+      historyCount.textContent = `${workspaceState.historyTasks.length} 条`;
+    }
+  }
+
+  function closeHistoryResumeModal() {
+    if (historyModalRoot) {
+      historyModalRoot.innerHTML = "";
+    }
+    workspaceState.resumeSubmitting = false;
+  }
+
+  function openHistoryResumeModal(task) {
+    if (!historyModalRoot) return;
+    historyModalRoot.innerHTML = buildResumeDialog(task);
   }
 
   function canStartWorkspaceTask() {
@@ -2167,6 +2275,7 @@ function setupWorkspaceInteraction(selectedScene) {
     const runtimeMeta = snapshot.runtimeMeta || {};
     const trainingProgress = snapshot.trainingProgress || runtimeMeta.trainingProgress || {};
     const shouldShow = Boolean(snapshot.status && snapshot.status !== "idle");
+    const isTrainingState = snapshot.status === "queued" || snapshot.status === "running" || snapshot.status === "cancelling";
 
     panel.style.display = shouldShow ? "block" : "none";
     if (!shouldShow) return;
@@ -2176,8 +2285,8 @@ function setupWorkspaceInteraction(selectedScene) {
     const eta = trainingProgress.eta ?? runtimeMeta.progress_eta;
 
     lossEl.textContent = Number.isFinite(Number(loss)) ? Number(loss).toFixed(7) : "--";
-    speedEl.textContent = speed ? String(speed) : snapshot.status === "running" ? "等待首个迭代" : "--";
-    etaEl.textContent = eta ? String(eta) : snapshot.status === "running" ? "计算中" : "--";
+    speedEl.textContent = isTrainingState && speed ? String(speed) : "--";
+    etaEl.textContent = isTrainingState && eta ? String(eta) : "--";
   }
 
   function syncTrainingViewerPreview(snapshot = {}) {
@@ -2189,52 +2298,27 @@ function setupWorkspaceInteraction(selectedScene) {
     const previewBadge = document.getElementById("viewer-preview-badge");
     const previewIterationLabel = document.getElementById("viewer-preview-iteration");
     const viewStageEl = document.getElementById("view-stage");
-
-    if (!preview?.url) {
+    if (snapshot.status === "success" && preview?.url) {
+      workspaceState.previewReady = true;
+      workspaceState.previewIteration = preview.iteration;
+      if (previewMeta) previewMeta.textContent = `当前结果：iteration ${preview.iteration}`;
+      if (previewBadge) previewBadge.classList.add("is-visible");
+      if (previewIterationLabel) previewIterationLabel.textContent = `iteration ${preview.iteration}`;
+      if (overlayTitle) overlayTitle.textContent = "训练完成";
+      if (overlayText) overlayText.textContent = "最终结果已生成并加载到 Viewer。";
+      window.focusGSStudioLoadPreview?.(preview.url, preview.iteration);
+    } else {
       workspaceState.previewReady = false;
       workspaceState.previewIteration = null;
-      if (previewMeta) previewMeta.textContent = "等待首个可预览的 checkpoint...";
+      if (previewMeta) previewMeta.textContent = "训练中仅保留日志，不加载实时预览。";
       if (previewBadge) previewBadge.classList.remove("is-visible", "is-refreshing");
       if (previewIterationLabel) previewIterationLabel.textContent = "iteration --";
-      if (overlayTitle) overlayTitle.textContent = "训练预览准备中";
-      if (overlayText) overlayText.textContent = "MEGS² 会在保存 checkpoint 后生成可预览结果。首个可视化快照出现后，这里会自动切换。";
-      syncWorkspaceViewerMode();
-      return;
-    }
-
-    const isNewPreview = workspaceState.previewIteration !== preview.iteration;
-    workspaceState.previewReady = true;
-    workspaceState.previewIteration = preview.iteration;
-    if (previewMeta) {
-      previewMeta.textContent = `当前预览：iteration ${preview.iteration}`;
-    }
-    if (previewIterationLabel) {
-      previewIterationLabel.textContent = `iteration ${preview.iteration}`;
-    }
-    if (previewBadge) {
-      previewBadge.classList.add("is-visible");
-    }
-
-    if (overlayTitle) overlayTitle.textContent = "训练中实时预览";
-    if (overlayText) overlayText.textContent = "当前 Viewer 已切换到最新保存的训练结果。后续每次保存新的 checkpoint，这里都会自动刷新。";
-
-    if (isNewPreview && previewBadge) {
-      previewBadge.classList.remove("is-refreshing");
-      void previewBadge.offsetWidth;
-      previewBadge.classList.add("is-refreshing");
-    }
-    if (isNewPreview && viewStageEl) {
-      viewStageEl.classList.remove("is-preview-refresh");
-      void viewStageEl.offsetWidth;
-      viewStageEl.classList.add("is-preview-refresh");
-      window.setTimeout(() => {
+      if (overlayTitle) overlayTitle.textContent = "训练预览已关闭";
+      if (overlayText) overlayText.textContent = "训练期间不加载中间 checkpoint，等任务结束后再切换到最终结果。";
+      if (viewStageEl) {
         viewStageEl.classList.remove("is-preview-refresh");
-      }, 520);
+      }
     }
-
-    if (window.focusGSRuntimeStats?.lastPreviewUrl === preview.url) return;
-    window.focusGSRuntimeStats.lastPreviewUrl = preview.url;
-    window.focusGSStudioLoadPreview?.(preview.url, preview.iteration);
     syncWorkspaceViewerMode();
   }
 
@@ -2321,10 +2405,11 @@ function setupWorkspaceInteraction(selectedScene) {
     workspaceState.progressIndex = overrides.progressIndex ?? workspaceState.progressIndex;
     workspaceState.logBadgeText = overrides.logBadgeText ?? workspaceState.logBadgeText;
     workspaceState.runtimeMeta = overrides.runtimeMeta ?? workspaceState.runtimeMeta;
+    window.focusGSWorkspaceRuntime.jobStatus = workspaceState.jobStatus;
 
     setWorkspaceJobPreview({
       modeConfig: getWorkspaceInputMode(workspaceState.mode),
-      sceneName: getWorkspaceSceneName(),
+      sceneName: getResolvedWorkspaceSceneName(),
       selectionSummary: workspaceState.selectionSummary,
       status: workspaceState.jobStatus,
       progressIndex: workspaceState.progressIndex,
@@ -2361,6 +2446,89 @@ function setupWorkspaceInteraction(selectedScene) {
     updateStartButtonState();
   }
 
+  async function fetchTrainingHistory() {
+    const response = await fetch("/api/train/history", { cache: "no-store" });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok || !Array.isArray(payload.jobs)) {
+      throw new Error(payload.message || "读取历史记录失败。");
+    }
+    return payload.jobs;
+  }
+
+  async function recoverActiveWorkspaceJob(preferredJobId = "") {
+    const jobs = await fetchTrainingHistory();
+    updateHistoryPanel(jobs);
+
+    const activeStatuses = ["running", "queued", "cancelling"];
+    const preferredJob = preferredJobId
+      ? jobs.find((item) => item.id === preferredJobId && activeStatuses.includes(item.status))
+      : null;
+    const fallbackJob = jobs.find((item) => activeStatuses.includes(item.status));
+    const targetJob = preferredJob || fallbackJob;
+
+    if (!targetJob?.id) {
+      throw new Error("未找到正在运行的任务。");
+    }
+
+    const [job, logs] = await Promise.all([fetchTrainingJob(targetJob.id), fetchTrainingLogs(targetJob.id)]);
+
+    workspaceState.modeActivated = true;
+    setWorkspaceDetailPanelsHidden(true);
+    setSceneGuideCollapsed(true, "auto");
+    setTimelineVisible(true);
+    setParamsVisible(true);
+    applyMode(job.mode || "colmap", true);
+    workspaceState.selectionSummary = job.selectionSummary || "已恢复训练任务";
+    workspaceState.paramValues = {
+      ...workspaceState.paramValues,
+      ...(job.parameterValues || {}),
+    };
+    workspaceState.runtimeMeta = {
+      source_strategy: job.sourceStrategy,
+      source_path: job.sourcePath,
+      resolved_scene_name: job.sceneName,
+      selected_image_dir: job.inputImageDir,
+      sparse_root: job.sparseRoot,
+      trainingProgress: job.trainingProgress || {},
+      preview: job.preview || null,
+    };
+    workspaceState.paramsCollapsed = true;
+    applyServerJob(job, logs);
+    switchTab("log");
+    return job;
+  }
+
+  async function refreshTrainingHistory() {
+    try {
+      const jobs = await fetchTrainingHistory();
+      updateHistoryPanel(jobs);
+    } catch (error) {
+      updateHistoryPanel(workspaceState.historyTasks);
+      if (historyPanelContent && (!workspaceState.historyTasks || !workspaceState.historyTasks.length)) {
+        historyPanelContent.innerHTML = `
+          <div class="history-empty">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <span>${error instanceof Error ? error.message : "历史记录读取失败"}</span>
+          </div>
+        `;
+      }
+    }
+  }
+
+  async function resumeTrainingJob(payload) {
+    const formData = new FormData();
+    formData.set("payload", JSON.stringify(payload));
+    const response = await fetch("/api/train/resume", {
+      method: "POST",
+      body: formData,
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.ok || !result.job) {
+      throw new Error(result.message || "创建续训任务失败。");
+    }
+    return result.job;
+  }
+
   function clearSimulationTimer() {
     if (workspaceState.simulationTimer) {
       window.clearInterval(workspaceState.simulationTimer);
@@ -2370,7 +2538,7 @@ function setupWorkspaceInteraction(selectedScene) {
 
   function clearFakeProgressTimer() {
     if (workspaceState.fakeProgressTimer) {
-      window.clearInterval(workspaceState.fakeProgressTimer);
+      window.clearTimeout(workspaceState.fakeProgressTimer);
       workspaceState.fakeProgressTimer = null;
     }
   }
@@ -2386,18 +2554,27 @@ function setupWorkspaceInteraction(selectedScene) {
     clearFakeProgressTimer();
 
     let fakeProgress = Number(workspaceState.runtimeMeta?.fake_progress_percent);
-    if (!Number.isFinite(fakeProgress) || fakeProgress <= 0) {
-      fakeProgress = 4;
+    if (!Number.isFinite(fakeProgress) || fakeProgress < 0) {
+      fakeProgress = 0;
+    }
+
+    function getFakeProgressLabel(progressValue) {
+      if (progressValue < 18) return "正在定位本地数据目录";
+      if (progressValue < 42) return "正在检查 COLMAP 结构";
+      if (progressValue < 68) return "正在准备训练环境";
+      if (progressValue < 92) return "正在加载训练模块";
+      if (progressValue < 100) return "训练环境已就绪，等待首批训练日志";
+      return "训练环境已就绪，等待首批训练日志";
     }
 
     workspaceState.runtimeMeta = {
       ...workspaceState.runtimeMeta,
       fake_progress_percent: fakeProgress,
-      fake_progress_label: "正在定位本地数据目录",
+      fake_progress_label: getFakeProgressLabel(fakeProgress),
     };
     syncJobPreview();
 
-    workspaceState.fakeProgressTimer = window.setInterval(() => {
+    const tickFakeProgress = () => {
       const hasRealIterationProgress =
         Number(workspaceState.runtimeMeta?.progress_iteration) > 0
         || Number(workspaceState.runtimeMeta?.trainingProgress?.currentIteration) > 0;
@@ -2416,23 +2593,49 @@ function setupWorkspaceInteraction(selectedScene) {
         return;
       }
 
-      const nextStep = fakeProgress < 28 ? 6 : fakeProgress < 56 ? 4 : fakeProgress < 78 ? 2.5 : 1.2;
-      fakeProgress = Math.min(92, fakeProgress + nextStep);
-      const fakeLabel =
-        fakeProgress < 24
-          ? "正在定位本地数据目录"
-          : fakeProgress < 52
-            ? "正在检查 COLMAP 结构"
-            : fakeProgress < 80
-              ? "正在准备训练环境"
-              : "正在启动 MEGS² 训练";
+      let nextStep = 0;
+      if (fakeProgress < 18) {
+        nextStep = 2.5 + Math.random() * 6.5;
+      } else if (fakeProgress < 42) {
+        nextStep = 1.8 + Math.random() * 5.2;
+      } else if (fakeProgress < 68) {
+        nextStep = 1.2 + Math.random() * 4.0;
+      } else if (fakeProgress < 92) {
+        nextStep = 0.8 + Math.random() * 2.4;
+      } else if (fakeProgress < 100) {
+        nextStep = 0.45 + Math.random() * 1.2;
+      }
+
+      fakeProgress = Math.min(100, fakeProgress + nextStep);
       workspaceState.runtimeMeta = {
         ...workspaceState.runtimeMeta,
         fake_progress_percent: Number(fakeProgress.toFixed(1)),
-        fake_progress_label: fakeLabel,
+        fake_progress_label: getFakeProgressLabel(fakeProgress),
       };
       syncJobPreview();
-    }, 420);
+
+      if (fakeProgress >= 100) {
+        workspaceState.fakeProgressTimer = null;
+        return;
+      }
+
+      const nextDelay =
+        fakeProgress < 32
+          ? 220 + Math.round(Math.random() * 240)
+          : fakeProgress < 74
+            ? 260 + Math.round(Math.random() * 360)
+            : 380 + Math.round(Math.random() * 520);
+
+      const adjustedDelay =
+        fakeProgress >= 92
+          ? 180 + Math.round(Math.random() * 220)
+          : nextDelay;
+
+      workspaceState.fakeProgressTimer = window.setTimeout(tickFakeProgress, adjustedDelay);
+    };
+
+    const initialDelay = 180 + Math.round(Math.random() * 180);
+    workspaceState.fakeProgressTimer = window.setTimeout(tickFakeProgress, initialDelay);
   }
 
   function updateStartButtonState() {
@@ -2482,7 +2685,7 @@ function setupWorkspaceInteraction(selectedScene) {
     dropzoneStatus.dataset.tone = tone;
   }
 
-  function applyMode(modeKey, triggeredByUser = false) {
+  function applyMode(modeKey, triggeredByUser = false, preserveActiveJob = false) {
     const modeConfig = getWorkspaceInputMode(modeKey);
     workspaceState.mode = modeConfig.key;
     workspaceState.modeActivated = triggeredByUser ? true : workspaceState.modeActivated;
@@ -2496,7 +2699,10 @@ function setupWorkspaceInteraction(selectedScene) {
     workspaceState.submissionAbortController = null;
     clearSimulationTimer();
     clearJobPollTimer();
-    workspaceState.activeJobId = null;
+    if (!preserveActiveJob) {
+      workspaceState.activeJobId = null;
+      persistActiveWorkspaceJobId("");
+    }
     workspaceState.isSubmitting = false;
 
     segmentButtons.forEach((button) => {
@@ -2568,6 +2774,7 @@ function setupWorkspaceInteraction(selectedScene) {
         ? {
             source_strategy: "local-path",
             source_hint: validation.meta?.rootName || getWorkspaceSceneName(),
+            resolved_scene_name: validation.meta?.rootName || getWorkspaceSceneName(),
             detected_image_dirs: workspaceState.colmapImageDirs,
             selected_image_dir: workspaceState.paramValues.input_image_dir,
             sparse_root: workspaceState.paramValues.sparse_root,
@@ -2688,12 +2895,17 @@ function setupWorkspaceInteraction(selectedScene) {
     const hasRealIterationProgress = Number(job?.trainingProgress?.currentIteration) > 0;
     const preservedFakeProgressPercent = workspaceState.runtimeMeta?.fake_progress_percent;
     const preservedFakeProgressLabel = workspaceState.runtimeMeta?.fake_progress_label;
+    const resolvedSceneName =
+      job?.sceneName
+      || workspaceState.selectionMeta?.rootName
+      || getWorkspaceSceneName();
 
     if (job.state === "success" || job.state === "failed" || job.state === "cancelled") {
       clearActiveWorkspaceJob();
       workspaceState.isSubmitting = false;
       clearFakeProgressTimer();
       clearJobPollTimer();
+      void refreshTrainingHistory();
     } else if (job.id) {
       workspaceState.activeJobId = job.id;
       persistActiveWorkspaceJobId(job.id);
@@ -2731,6 +2943,7 @@ function setupWorkspaceInteraction(selectedScene) {
         progress_speed: job.trainingProgress?.speed,
         progress_eta: job.trainingProgress?.eta,
         trainingProgress: job.trainingProgress || {},
+        resolved_scene_name: resolvedSceneName,
         fake_progress_percent: hasRealIterationProgress ? undefined : preservedFakeProgressPercent,
         fake_progress_label: hasRealIterationProgress ? undefined : preservedFakeProgressLabel,
         preview: job.preview || null,
@@ -2738,6 +2951,11 @@ function setupWorkspaceInteraction(selectedScene) {
         log_excerpt: logs ? getLogExcerpt(logs) : undefined,
       },
     });
+
+    if (job.state === "success" && job.preview?.url) {
+      switchTab("viewer");
+      window.focusGSStudioLoadPreview?.(job.preview.url, job.preview.iteration);
+    }
   }
 
   async function fetchTrainingJob(jobId) {
@@ -2762,6 +2980,10 @@ function setupWorkspaceInteraction(selectedScene) {
     const persistedJobId = readPersistedActiveWorkspaceJobId();
     if (!persistedJobId) return;
 
+    workspaceState.activeJobId = persistedJobId;
+    workspaceState.jobStatus = "running";
+    window.focusGSWorkspaceRuntime.jobStatus = "running";
+
     try {
       const [job, logs] = await Promise.all([fetchTrainingJob(persistedJobId), fetchTrainingLogs(persistedJobId)]);
 
@@ -2784,6 +3006,7 @@ function setupWorkspaceInteraction(selectedScene) {
       workspaceState.runtimeMeta = {
         source_strategy: job.sourceStrategy,
         source_path: job.sourcePath,
+        resolved_scene_name: job.sceneName,
         selected_image_dir: job.inputImageDir,
         sparse_root: job.sparseRoot,
         trainingProgress: job.trainingProgress || {},
@@ -2793,8 +3016,19 @@ function setupWorkspaceInteraction(selectedScene) {
       applyServerJob(job, logs);
       switchTab("log");
       scheduleTrainingJobPoll(job.id, 1200);
-    } catch {
-      persistActiveWorkspaceJobId("");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (message.includes("Job not found")) {
+        try {
+          const recoveredJob = await recoverActiveWorkspaceJob(persistedJobId);
+          scheduleTrainingJobPoll(recoveredJob.id, 1200);
+          return;
+        } catch {
+          clearActiveWorkspaceJob();
+          return;
+        }
+      }
+      scheduleTrainingJobPoll(persistedJobId, 2500);
     }
   }
 
@@ -2819,18 +3053,36 @@ function setupWorkspaceInteraction(selectedScene) {
           scheduleTrainingJobPoll(jobId);
         }
       } catch (error) {
-        clearActiveWorkspaceJob();
-        workspaceState.isSubmitting = false;
-        clearFakeProgressTimer();
+        const message = error instanceof Error ? error.message : "";
+        if (message.includes("Job not found")) {
+          try {
+            const recoveredJob = await recoverActiveWorkspaceJob(jobId);
+            scheduleTrainingJobPoll(recoveredJob.id, 1200);
+            return;
+          } catch (recoverError) {
+            clearActiveWorkspaceJob();
+            syncJobPreview({
+              status: "idle",
+              progressIndex: workspaceState.progressIndex >= 0 ? workspaceState.progressIndex : 0,
+              logBadgeText: recoverError instanceof Error ? recoverError.message : "当前没有可恢复的运行中任务。",
+              runtimeMeta: {
+                ...workspaceState.runtimeMeta,
+                error: recoverError instanceof Error ? recoverError.message : "当前没有可恢复的运行中任务。",
+              },
+            });
+            return;
+          }
+        }
         syncJobPreview({
-          status: "failed",
+          status: workspaceState.jobStatus === "idle" ? "running" : workspaceState.jobStatus,
           progressIndex: workspaceState.progressIndex >= 0 ? workspaceState.progressIndex : 0,
-          logBadgeText: error instanceof Error ? error.message : "轮询训练状态失败。",
+          logBadgeText: error instanceof Error ? `轮询失败，稍后重试：${error.message}` : "轮询失败，稍后重试。",
           runtimeMeta: {
             ...workspaceState.runtimeMeta,
             error: error instanceof Error ? error.message : "轮询训练状态失败。",
           },
         });
+        scheduleTrainingJobPoll(jobId, 2500);
       }
     }, delay);
   }
@@ -2843,7 +3095,7 @@ function setupWorkspaceInteraction(selectedScene) {
     workspaceState.submissionAbortController = submissionAbortController;
     const payload = {
       mode: workspaceState.mode,
-      sceneName: getWorkspaceSceneName(),
+      sceneName: getResolvedWorkspaceSceneName(getWorkspaceSceneName()),
       sceneTags: selectedScene.tags || [],
       selectionSummary: workspaceState.selectionSummary,
       parameterValues: workspaceState.paramValues,
@@ -2865,11 +3117,12 @@ function setupWorkspaceInteraction(selectedScene) {
       runtimeMeta: {
         source_strategy: "local-path",
         source_hint: workspaceState.selectionMeta?.rootName || getWorkspaceSceneName(),
+        resolved_scene_name: getResolvedWorkspaceSceneName(getWorkspaceSceneName()),
         upload_count: 0,
         selected_image_dir: workspaceState.paramValues.input_image_dir,
         sparse_root: workspaceState.paramValues.sparse_root,
         trainingProgress: {},
-        fake_progress_percent: 4,
+        fake_progress_percent: 0,
         fake_progress_label: "正在定位本地数据目录",
       },
     });
@@ -2890,9 +3143,12 @@ function setupWorkspaceInteraction(selectedScene) {
       workspaceState.isSubmitting = false;
       workspaceState.activeJobId = result.job.id;
       persistActiveWorkspaceJobId(result.job.id);
-      clearFakeProgressTimer();
       workspaceState.submissionAbortController = null;
       applyServerJob(result.job);
+      void refreshTrainingHistory();
+      if (Number(result.job?.trainingProgress?.currentIteration) <= 0) {
+        startFakeQueuedProgress();
+      }
       switchTab("log");
       scheduleTrainingJobPoll(result.job.id, 1200);
     } catch (error) {
@@ -2983,6 +3239,77 @@ function setupWorkspaceInteraction(selectedScene) {
     }
   }
 
+  async function attemptResumeTraining(task) {
+    if (!task?.canResume) return;
+    openHistoryResumeModal(task);
+  }
+
+  async function submitResumeTraining(parentJobId) {
+    if (workspaceState.resumeSubmitting) return;
+    const task = workspaceState.historyTasks.find((item) => item.id === parentJobId);
+    if (!task) {
+      window.alert("未找到续训来源任务。");
+      return;
+    }
+
+    const iterationSelect = document.getElementById("resume-iteration-select");
+    const additionalInput = document.getElementById("resume-additional-iterations");
+    const outputModeSelect = document.getElementById("resume-output-mode");
+    const resumeButton = document.getElementById("history-resume-submit");
+    const resumeIteration = Number(iterationSelect?.value);
+    const additionalIterations = Number(additionalInput?.value);
+    const outputMode = outputModeSelect?.value || "new-dir";
+
+    if (!Number.isFinite(resumeIteration) || resumeIteration <= 0) {
+      window.alert("请选择有效的续训 checkpoint。");
+      return;
+    }
+    if (!Number.isFinite(additionalIterations) || additionalIterations <= 0) {
+      window.alert("请输入有效的追加训练轮数。");
+      return;
+    }
+
+    workspaceState.resumeSubmitting = true;
+    if (resumeButton instanceof HTMLButtonElement) {
+      resumeButton.disabled = true;
+      resumeButton.textContent = "正在创建续训任务...";
+    }
+
+    try {
+      const job = await resumeTrainingJob({
+        parentJobId,
+        resumeIteration,
+        additionalIterations,
+        outputMode,
+      });
+
+      workspaceState.modeActivated = true;
+      workspaceState.paramsCollapsed = true;
+      workspaceState.isSubmitting = false;
+      workspaceState.activeJobId = job.id;
+      persistActiveWorkspaceJobId(job.id);
+      setWorkspaceDetailPanelsHidden(true);
+      setSceneGuideCollapsed(true, "auto");
+      setTimelineVisible(true);
+      setParamsVisible(true);
+      switchTab("log");
+      closeHistoryResumeModal();
+      applyServerJob(job);
+      if (Number(job?.trainingProgress?.currentIteration) <= 0) {
+        startFakeQueuedProgress();
+      }
+      await refreshTrainingHistory();
+      scheduleTrainingJobPoll(job.id, 1200);
+    } catch (error) {
+      workspaceState.resumeSubmitting = false;
+      if (resumeButton instanceof HTMLButtonElement) {
+        resumeButton.disabled = false;
+        resumeButton.textContent = "开始续训";
+      }
+      window.alert(error instanceof Error ? error.message : "创建续训任务失败。");
+    }
+  }
+
   if (tabViewer) tabViewer.addEventListener("click", () => switchTab("viewer"));
   if (tabLog) tabLog.addEventListener("click", () => switchTab("log"));
 
@@ -3040,6 +3367,7 @@ function setupWorkspaceInteraction(selectedScene) {
 
   sceneNameInput?.addEventListener("input", () => {
     syncJobPreview();
+    void refreshTrainingHistory();
   });
 
   paramsPanel?.addEventListener("input", (event) => {
@@ -3101,11 +3429,33 @@ function setupWorkspaceInteraction(selectedScene) {
     void attemptCancelTraining();
   });
 
-  applyMode("images", false);
+  document.querySelector(".history-panel")?.addEventListener("click", (event) => {
+    const resumeButton = event.target.closest('[data-history-action="resume"]');
+    if (!resumeButton) return;
+    const task = workspaceState.historyTasks.find((item) => item.id === resumeButton.dataset.jobId);
+    if (!task) return;
+    void attemptResumeTraining(task);
+  });
+
+  historyModalRoot?.addEventListener("click", (event) => {
+    const closeTarget = event.target.closest("[data-history-modal-close]");
+    if (closeTarget) {
+      closeHistoryResumeModal();
+      return;
+    }
+    const submitTarget = event.target.closest("#history-resume-submit");
+    if (submitTarget) {
+      void submitResumeTraining(submitTarget.dataset.jobId || "");
+    }
+  });
+
+  applyMode("images", false, Boolean(readPersistedActiveWorkspaceJobId()));
   syncSceneGuidePanel();
   syncWorkspaceViewerMode();
   setTimelineVisible(false);
   setParamsVisible(false);
+  updateHistoryPanel([]);
+  void refreshTrainingHistory();
   void restoreActiveWorkspaceJob();
 }
 
@@ -3383,9 +3733,9 @@ export function renderWorkspacePage(
         <section class="panel history-panel">
           <div class="history-panel__header">
             <h2>历史训练记录</h2>
-            <span class="history-count">${history.length} 条</span>
+            <span class="history-count" id="history-count">${history.length} 条</span>
           </div>
-          ${buildHistoryPanel(history)}
+          <div id="history-panel-content">${buildHistoryPanel(history)}</div>
         </section>
       </aside>
 
@@ -3488,6 +3838,7 @@ export function renderWorkspacePage(
         </section>
       </aside>
     </div>
+    <div id="history-modal-root"></div>
   `;
 
   setTimeout(() => {
