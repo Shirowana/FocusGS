@@ -4,82 +4,65 @@
 # Core repo metadata and top-level docs/scripts.
 !.gitignore
 !README.md
-!start_garden_browser_viewer.sh
+!docs/
+!docs/**
+!scripts/
+!scripts/**
+!frontend/
+!frontend/**
+!backend/
+!backend/**
+!algorithms/
+!algorithms/**
+!viewers/
+!viewers/**
 
 # ----------------------------
 # Frontend snapshot
 # ----------------------------
-!gs-browser-viewer/
-!gs-browser-viewer/**
-
 # Never track installed dependencies, builds, or linked model assets.
-gs-browser-viewer/node_modules/
-gs-browser-viewer/dist/
-gs-browser-viewer/public/assets/
-gs-browser-viewer/figures/
+frontend/gs-browser-viewer/node_modules/
+frontend/gs-browser-viewer/dist/
+frontend/gs-browser-viewer/public/assets/
+frontend/gs-browser-viewer/.runtime/
+frontend/gs-browser-viewer/figures copy/
 
 # ----------------------------
 # MEGS-2 source snapshot
 # ----------------------------
-!MEGS-2/
-!MEGS-2/**
-
 # Drop nested git metadata, local builds, checkpoints, and third-party submodules.
-MEGS-2/.git/
-MEGS-2/.git/**
-MEGS-2/.git-local-backup/
-MEGS-2/.git-local-backup/**
-MEGS-2/**/.git/
-MEGS-2/**/.git/**
-MEGS-2/submodules/
-MEGS-2/submodules/**
-MEGS-2/**/__pycache__/
-MEGS-2/**/*.pyc
-MEGS-2/**/.ipynb_checkpoints/
-MEGS-2/**/build/
-MEGS-2/**/dist/
-MEGS-2/**/output/
-MEGS-2/**/output*/
-MEGS-2/**/tensorboard_3d/
-MEGS-2/**/screenshots/
-MEGS-2/**/*.so
-MEGS-2/**/*.o
-MEGS-2/**/*.a
+algorithms/MEGS-2/.git/
+algorithms/MEGS-2/.git/**
+algorithms/MEGS-2/.git-local-backup/
+algorithms/MEGS-2/.git-local-backup/**
+algorithms/MEGS-2/**/.git/
+algorithms/MEGS-2/**/.git/**
+algorithms/MEGS-2/submodules/
+algorithms/MEGS-2/submodules/**
+algorithms/MEGS-2/**/__pycache__/
+algorithms/MEGS-2/**/*.pyc
+algorithms/MEGS-2/**/.ipynb_checkpoints/
+algorithms/MEGS-2/**/build/
+algorithms/MEGS-2/**/dist/
+algorithms/MEGS-2/**/output/
+algorithms/MEGS-2/**/output*/
+algorithms/MEGS-2/**/tensorboard_3d/
+algorithms/MEGS-2/**/screenshots/
+algorithms/MEGS-2/**/*.so
+algorithms/MEGS-2/**/*.o
+algorithms/MEGS-2/**/*.a
 
 # ----------------------------
-# Gaussian Splatting source snapshot
+# Viewer source snapshot
 # ----------------------------
-!gaussian-splatting/
-!gaussian-splatting/**
-
-# Drop nested git metadata, external deps, builds, and generated binaries.
-gaussian-splatting/.git/
-gaussian-splatting/.git/**
-gaussian-splatting/.git-local-backup/
-gaussian-splatting/.git-local-backup/**
-gaussian-splatting/**/.git/
-gaussian-splatting/**/.git/**
-gaussian-splatting/.gitmodules
-gaussian-splatting/submodules/
-gaussian-splatting/submodules/**
-gaussian-splatting/**/__pycache__/
-gaussian-splatting/**/*.pyc
-gaussian-splatting/**/build/
-gaussian-splatting/**/dist/
-gaussian-splatting/**/install/
-gaussian-splatting/**/output/
-gaussian-splatting/**/output*/
-gaussian-splatting/**/tensorboard_3d/
-gaussian-splatting/**/screenshots/
-gaussian-splatting/SIBR_viewers/
-gaussian-splatting/SIBR_viewers/**
-gaussian-splatting/**/*.so
-gaussian-splatting/**/*.o
-gaussian-splatting/**/*.a
+viewers/web-splat/.git/
+viewers/web-splat/.git/**
+viewers/web-splat/target/
+viewers/web-splat/public/pkg/
 
 # ----------------------------
 # Always exclude heavy local-only workspace data and results
 # ----------------------------
-extracted/
-logs/
-test/
+/data/
+/logs/
+/runs/

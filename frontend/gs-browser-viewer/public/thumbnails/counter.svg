@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="#151517"/>
+  <rect x="70" y="200" width="500" height="72" rx="10" fill="#4d3a2f"/>
+  <rect x="108" y="124" width="96" height="76" rx="12" fill="#8ea3bf"/>
+  <rect x="234" y="98" width="140" height="102" rx="12" fill="#263144"/>
+  <rect x="402" y="142" width="112" height="58" rx="12" fill="#67768a"/>
+  <text x="60" y="72" fill="#f7f4ef" font-size="42" font-family="Segoe UI, sans-serif">Counter</text>
+</svg>

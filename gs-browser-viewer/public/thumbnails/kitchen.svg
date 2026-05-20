@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
-  <rect width="640" height="360" fill="#151a20"/>
-  <rect x="60" y="94" width="520" height="184" rx="18" fill="#222c37"/>
-  <rect x="94" y="128" width="144" height="116" rx="12" fill="#3b495b"/>
-  <rect x="262" y="128" width="128" height="116" rx="12" fill="#8b6f52"/>
-  <rect x="414" y="128" width="132" height="116" rx="12" fill="#364556"/>
-  <text x="60" y="62" fill="#f2f6fa" font-size="42" font-family="Segoe UI, sans-serif">Kitchen</text>
-</svg>

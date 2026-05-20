@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="#0d1413"/>
+  <circle cx="320" cy="136" r="96" fill="#274a3f"/>
+  <rect x="268" y="160" width="104" height="120" rx="26" fill="#6e533e"/>
+  <ellipse cx="320" cy="164" rx="64" ry="28" fill="#8c6c50"/>
+  <text x="56" y="64" fill="#eef5f3" font-size="42" font-family="Segoe UI, sans-serif">Stump</text>
+</svg>

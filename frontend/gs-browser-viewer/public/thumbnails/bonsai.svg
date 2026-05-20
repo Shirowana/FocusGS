@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="#0f1512"/>
+  <ellipse cx="320" cy="250" rx="140" ry="34" fill="#654d39"/>
+  <rect x="284" y="160" width="72" height="92" rx="18" fill="#8b674a"/>
+  <circle cx="250" cy="150" r="48" fill="#3a6b4c"/>
+  <circle cx="320" cy="120" r="62" fill="#4e8a61"/>
+  <circle cx="392" cy="152" r="44" fill="#3d7352"/>
+  <text x="60" y="72" fill="#f4f7f3" font-size="42" font-family="Segoe UI, sans-serif">Bonsai</text>
+</svg>

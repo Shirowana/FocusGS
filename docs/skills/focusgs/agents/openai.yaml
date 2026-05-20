@@ -1,0 +1,4 @@
+interface:
+  display_name: "FocusGS"
+  short_description: "FocusGS project onboarding skill"
+  default_prompt: "Use $focusgs to understand and continue work on the FocusGS project."
