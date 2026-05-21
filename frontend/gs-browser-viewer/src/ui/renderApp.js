@@ -1096,13 +1096,31 @@ function buildPageSwitch(sceneId = "garden", activePage = "home") {
         首页
       </a>
       <a
-        class="page-switch__item ${activePage === "workspace" ? "is-active" : ""}"
+        class="page-switch__item ${activePage === "showcase" ? "is-active" : ""}"
         href="/?scene=${sceneId}"
-        data-page="workspace"
+        data-page="showcase"
         role="tab"
-        aria-selected="${activePage === "workspace"}"
+        aria-selected="${activePage === "showcase"}"
       >
-        工作台
+        展示
+      </a>
+      <a
+        class="page-switch__item ${activePage === "train" ? "is-active" : ""}"
+        href="/?page=train&scene=${sceneId}"
+        data-page="train"
+        role="tab"
+        aria-selected="${activePage === "train"}"
+      >
+        训练
+      </a>
+      <a
+        class="page-switch__item ${activePage === "history" ? "is-active" : ""}"
+        href="/?page=history&scene=${sceneId}"
+        data-page="history"
+        role="tab"
+        aria-selected="${activePage === "history"}"
+      >
+        历史
       </a>
     </div>
   `;
@@ -1255,7 +1273,7 @@ function buildShowcaseFeature(scene) {
           <p class="showcase-stage__eyebrow">Featured Scene</p>
           <h3 id="showcase-title">${scene.name}</h3>
         </div>
-        <a class="btn btn--outline showcase-stage__link" id="showcase-open-link" href="/?scene=${scene.id}">Open Workspace</a>
+        <a class="btn btn--outline showcase-stage__link" id="showcase-open-link" href="/?scene=${scene.id}">进入展示</a>
       </div>
       <p class="showcase-stage__desc" id="showcase-description">${scene.description}</p>
       <div class="showcase-stage__facts">
@@ -1364,6 +1382,21 @@ function buildSceneHighlightPanel(scene) {
       </div>
     </section>
   `;
+}
+
+function setupSlimSceneGuideInteraction() {
+  const sceneGuidePanel = document.getElementById("scene-guide-panel");
+  const sceneGuideToggle = document.getElementById("scene-guide-toggle");
+  if (!sceneGuidePanel || !sceneGuideToggle) return;
+  if (sceneGuidePanel.dataset.boundSlimGuide === "true") return;
+  sceneGuidePanel.dataset.boundSlimGuide = "true";
+
+  sceneGuideToggle.addEventListener("click", () => {
+    const nextCollapsed = !sceneGuidePanel.classList.contains("is-collapsed");
+    sceneGuidePanel.classList.toggle("is-collapsed", nextCollapsed);
+    sceneGuideToggle.textContent = nextCollapsed ? "展开" : "收起";
+    sceneGuideToggle.setAttribute("aria-expanded", String(!nextCollapsed));
+  });
 }
 
 function buildPerformanceSummary() {
@@ -3785,8 +3818,15 @@ function setupWorkspaceInteraction(selectedScene) {
   applyMode("images", false, Boolean(readPersistedActiveWorkspaceJobId()));
   syncSceneGuidePanel();
   syncWorkspaceViewerMode();
-  setTimelineVisible(false);
-  setParamsVisible(false);
+  const pageKey = new URLSearchParams(window.location.search).get("page") || "";
+  const shouldShowTrainingPanels = pageKey === "train";
+  setTimelineVisible(shouldShowTrainingPanels);
+  setParamsVisible(shouldShowTrainingPanels);
+  if (shouldShowTrainingPanels) {
+    renderTimeline(workspaceState.mode, -1);
+    renderParams(workspaceState.mode);
+    switchTab("log");
+  }
   updateHistoryPanel([]);
   void refreshTrainingHistory();
   void restoreActiveWorkspaceJob();
@@ -3873,8 +3913,16 @@ export function renderHomePage(scenes) {
             <span>${sceneCount} Scenes Ready</span>
           </div>
           <div class="hero-actions">
-            <a href="#showcase" class="btn btn--primary">查看成果展示</a>
-            <a href="/?scene=${featuredScene?.id || "garden"}" class="btn btn--outline">进入工作台展示</a>
+            <a href="/?scene=${featuredScene?.id || "garden"}" class="btn btn--primary">进入展示</a>
+            <a href="/?page=train&scene=${featuredScene?.id || "garden"}" class="btn btn--outline">开始训练</a>
+          </div>
+          <div style="margin-top: 10px;">
+            <a
+              href="#showcase"
+              style="font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); text-decoration: none;"
+            >
+              看看有哪些场景 →
+            </a>
           </div>
         </div>
       </section>
@@ -3912,7 +3960,7 @@ export function renderHomePage(scenes) {
         <div class="section-header section-header--centered">
           <p class="section-kicker">Scene Showcase</p>
           <h2>九个场景，持续扩展的 3DGS 演示入口。</h2>
-          <p class="showcase-section__subtitle">从预训练结果到后续新实验场景，FocusGS 让场景展示区保持可新增、可切换、可进入工作台的连续体验。</p>
+          <p class="showcase-section__subtitle">从预训练结果到后续新实验场景，FocusGS 让场景展示区保持可新增、可切换、可进入展示页的连续体验。</p>
         </div>
         <div class="showcase-shell">
           <div class="showcase-stage" id="showcase-feature" data-parallax-speed="0.08" data-parallax-max="56">
@@ -3950,11 +3998,11 @@ export function renderHomePage(scenes) {
           <div class="cta-copy">
             <p class="section-kicker">Launch the Studio</p>
             <h2>FocusGS 让 3DGS 在有限显存条件下也能顺畅展示。</h2>
-            <p>从场景成果浏览到工作台式演示，这个首页负责建立第一印象，真正的三维巡览与实验链路则继续在 Studio Workspace 中展开。</p>
+            <p>从场景成果浏览到训练实验，这个首页负责建立第一印象；真正的三维重建、日志与历史管理将在后续页面里继续展开。</p>
           </div>
           <div class="cta-actions cta-actions--stacked">
-            <a class="btn btn--primary" href="/?scene=${featuredScene?.id || "garden"}">开始体验 / 进入工作台</a>
-            <a class="btn btn--outline" href="${HOME_GITHUB_LINK}">GitHub</a>
+            <a class="btn btn--primary" href="/?page=train&scene=${featuredScene?.id || "garden"}">开始训练</a>
+            <a class="btn btn--outline" href="/?scene=${featuredScene?.id || "garden"}">先逛展示</a>
           </div>
         </div>
       </section>
@@ -4002,12 +4050,12 @@ export function renderWorkspacePage(
             </span>
           </a>
           <div class="topbar__title-wrapper">
-             <p class="eyebrow">Studio Workspace</p>
+             <p class="eyebrow">展示</p>
              <h1>${selectedScene.name}</h1>
           </div>
         </div>
         <div class="topbar__actions">
-           ${buildPageSwitch(selectedScene.id, "workspace")}
+           ${buildPageSwitch(selectedScene.id, "showcase")}
            <button class="btn btn--icon theme-toggle-btn" onclick="toggleTheme()" title="切换主题">
              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
            </button>
@@ -4032,53 +4080,10 @@ export function renderWorkspacePage(
             ${buildSceneCards(scenes, selectedScene.id)}
           </div>
         </section>
-
-        <!-- 任务入口：深度还原任务创建表单 -->
-        <section class="panel task-create-panel">
-          <h2>创建任务</h2>
-          
-          <div class="segmented-control">
-            <button class="segment active" type="button" data-input-mode="images">图片目录</button>
-            <button class="segment" type="button" data-input-mode="video">单个视频</button>
-            <button class="segment" type="button" data-input-mode="colmap">COLMAP</button>
-          </div>
-
-          <div class="form-group">
-            <label>场景名</label>
-            <input id="workspace-scene-name" type="text" class="input-field" placeholder="${selectedScene.id}" value="${selectedScene.id}" />
-          </div>
-
-          <div class="form-group">
-            <label id="workspace-input-label">选择一个图片目录</label>
-            <div class="upload-dropzone">
-               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-               <p id="upload-dropzone-title">拖拽图片文件夹到这里，或点击选择目录。</p>
-               <span id="upload-dropzone-hint">支持任何图像格式</span>
-               <small id="upload-dropzone-status" class="upload-dropzone__status">尚未选择输入源</small>
-            </div>
-            <input id="workspace-folder-input" type="file" hidden webkitdirectory directory multiple />
-            <input id="workspace-video-input" type="file" hidden accept="video/*" />
-          </div>
-
-        </section>
-
-        <!-- 历史任务面板 -->
-        <section class="panel history-panel">
-          <div class="history-panel__header">
-            <h2>历史训练记录</h2>
-            <span class="history-count" id="history-count">${history.length} 条</span>
-          </div>
-          <div id="history-panel-content">${buildHistoryPanel(history)}</div>
-        </section>
       </aside>
 
-      <!-- 中间主视图：Viewer 与日志切换 -->
+      <!-- 中间主视图：Viewer -->
       <main class="viewer-shell">
-        <div class="viewer-tabs">
-          <button class="viewer-tab active" id="tab-viewer">3D 渲染结果 (Viewer)</button>
-          <button class="viewer-tab" id="tab-log">任务日志 (Task Log)</button>
-        </div>
-
         <!-- 3D 渲染容器 -->
         <div class="viewer-stage" id="view-stage">
           <div class="viewer-overlay" id="status-overlay">
@@ -4086,55 +4091,12 @@ export function renderWorkspacePage(
               <span>Loading pretrained ${selectedScene.id} splats...</span>
           </div>
           <div class="viewer-status-text" id="status">Initiating Viewer...</div>
-          <div class="viewer-preview-badge" id="viewer-preview-badge" aria-hidden="true">
-            <span class="viewer-preview-badge__label">Preview</span>
-            <strong id="viewer-preview-iteration">iteration --</strong>
-          </div>
-          <div class="workspace-viewer-overlay" id="workspace-viewer-overlay" aria-hidden="true">
-            <div class="workspace-viewer-overlay__card">
-              <p class="workspace-viewer-overlay__eyebrow">WORKSPACE MODE</p>
-              <h3>训练预览准备中</h3>
-              <p class="workspace-viewer-overlay__body">MEGS² 会在保存 checkpoint 后生成可预览结果。首个可视化快照出现后，这里会自动切换。</p>
-              <p class="workspace-viewer-overlay__meta" id="workspace-viewer-preview-meta">等待首个可预览的 checkpoint...</p>
-              <button type="button" class="btn btn--outline workspace-viewer-overlay__btn" id="workspace-expand-scene-guide">展开场景导览</button>
-            </div>
-          </div>
           <div id="viewer"></div>
-        </div>
-
-        <!-- 日志查看容器 (初始隐藏) -->
-        <div class="log-stage" id="log-stage" style="display: none;">
-          ${buildTrainingProgressPanel()}
-          <div class="log-header">
-            <div class="log-title">
-              <strong>job.json</strong>
-              <div class="log-badge" id="log-status-badge">
-                 <span class="status-dot status-dot--success"></span>
-                 任务空闲
-              </div>
-            </div>
-          </div>
-          <div class="log-content-wrapper">
-             <pre class="code-log"><code id="json-log-content">等待任务启动...</code></pre>
-          </div>
         </div>
       </main>
 
       <!-- 右侧信息与时间线面板 -->
       <aside class="sidebar sidebar--right">
-        
-        <!-- 阶段时间线 -->
-        <section class="panel timeline-panel" id="timeline-panel" style="display: none;">
-          <h2>阶段时间线</h2>
-          <div class="timeline"></div>
-        </section>
-
-        <section class="panel workspace-params-panel" id="workspace-params-panel" style="display: none;">
-          <h2>重建参数</h2>
-        </section>
-
-        ${buildTrainingRuntimePanel()}
-
         <section class="panel info-panel workspace-detail-panel">
           <h2>场景简介</h2>
           <p class="desc">${selectedScene.description}</p>
@@ -4175,8 +4137,210 @@ export function renderWorkspacePage(
   `;
 
   setTimeout(() => {
-    setupHistoryInteraction();
-    setupWorkspaceInteraction(selectedScene);
+    setupSlimSceneGuideInteraction();
+    setupSceneGallery(selectedScene);
     setupGpuSummary();
   }, 0);
+}
+
+export function renderTrainPage(scenes, selectedScene) {
+  stopWorkflowAutoAdvance();
+  document.title = `训练 | ${selectedScene?.name || "FocusGS"}`;
+
+  const scene = selectedScene || scenes?.[0] || { id: "garden", name: "Garden" };
+
+  document.getElementById("app").innerHTML = `
+    <div class="layout studio-layout">
+      <header class="topbar">
+        <div class="topbar__left">
+          <a class="home-nav-brand home-nav-brand--compact" href="/" aria-label="FocusGS Home">
+            <span class="home-nav-brand__logo-shell" aria-hidden="true">
+              <img class="home-nav-brand__logo home-nav-brand__logo--light" src="/logo.png" alt="" />
+              <img class="home-nav-brand__logo home-nav-brand__logo--dark" src="/logo-dark.png" alt="" />
+            </span>
+            <span class="home-nav-brand__text">
+              <span class="home-nav-brand__title">FocusGS</span>
+              <span class="home-nav-brand__subtitle">Memory-Efficient 3D Gaussian Splatting</span>
+            </span>
+          </a>
+          <div class="topbar__title-wrapper">
+             <p class="eyebrow">训练</p>
+             <h1>三维重建训练</h1>
+          </div>
+        </div>
+        <div class="topbar__actions">
+          ${buildPageSwitch(scene.id, "train")}
+          <button class="btn btn--icon theme-toggle-btn" onclick="toggleTheme()" title="切换主题">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <aside class="sidebar sidebar--left">
+        <section class="panel task-create-panel">
+          <h2>创建任务</h2>
+
+          <div class="segmented-control">
+            <button class="segment active" type="button" data-input-mode="images">图片目录</button>
+            <button class="segment" type="button" data-input-mode="video">单个视频</button>
+            <button class="segment" type="button" data-input-mode="colmap">COLMAP</button>
+          </div>
+
+          <div class="form-group">
+            <label>场景名</label>
+            <input id="workspace-scene-name" type="text" class="input-field" placeholder="${scene.id}" value="${scene.id}" />
+          </div>
+
+          <div class="form-group">
+            <label id="workspace-input-label">选择一个图片目录</label>
+            <div class="upload-dropzone">
+               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+               <p id="upload-dropzone-title">拖拽图片文件夹到这里，或点击选择目录。</p>
+               <span id="upload-dropzone-hint">支持任何图像格式</span>
+               <small id="upload-dropzone-status" class="upload-dropzone__status">尚未选择输入源</small>
+            </div>
+            <input id="workspace-folder-input" type="file" hidden webkitdirectory directory multiple />
+            <input id="workspace-video-input" type="file" hidden accept="video/*" />
+          </div>
+        </section>
+
+        <section class="panel help-panel">
+          <h2>性能摘要</h2>
+          ${buildPerformanceSummary()}
+        </section>
+      </aside>
+
+      <main class="viewer-shell">
+        <div class="viewer-tabs">
+          <button class="viewer-tab" id="tab-viewer" type="button" disabled title="训练过程中打开 Viewer 可能导致 OOM；完成后会自动切换。">Viewer 预览（训练中禁用）</button>
+          <button class="viewer-tab active" id="tab-log" type="button">Timeline + Log</button>
+        </div>
+
+        <div class="viewer-stage" id="view-stage" style="display: none;">
+          <div class="viewer-overlay" id="status-overlay">
+              <div class="viewer-spinner"></div>
+              <span>Viewer is disabled during training to avoid OOM.</span>
+          </div>
+          <div class="viewer-status-text" id="status">Viewer disabled</div>
+          <div id="viewer"></div>
+        </div>
+
+        <div class="log-stage" id="log-stage" style="display: flex;">
+          ${buildTrainingProgressPanel()}
+          <div class="log-header">
+            <div class="log-title">
+              <strong>job.json</strong>
+              <div class="log-badge" id="log-status-badge">
+                 <span class="status-dot status-dot--success"></span>
+                 任务空闲
+              </div>
+            </div>
+          </div>
+          <div class="log-content-wrapper">
+             <pre class="code-log"><code id="json-log-content">等待任务启动...</code></pre>
+          </div>
+        </div>
+      </main>
+
+      <aside class="sidebar sidebar--right">
+        <section class="panel timeline-panel" id="timeline-panel">
+          <h2>阶段时间线</h2>
+          <div class="timeline"></div>
+        </section>
+
+        <section class="panel workspace-params-panel" id="workspace-params-panel">
+          <h2>重建参数</h2>
+        </section>
+
+        ${buildTrainingRuntimePanel()}
+      </aside>
+    </div>
+    <div id="history-modal-root"></div>
+  `;
+
+  setTimeout(() => {
+    setupWorkspaceInteraction(selectedScene || scene);
+    setupGpuSummary();
+  }, 0);
+}
+
+export function renderHistoryPage(scenes, selectedScene) {
+  stopWorkflowAutoAdvance();
+  document.title = `历史 | ${selectedScene?.name || "FocusGS"}`;
+
+  const scene = selectedScene || scenes?.[0] || { id: "garden", name: "Garden" };
+
+  document.getElementById("app").innerHTML = `
+    <div class="layout studio-layout">
+      <header class="topbar">
+        <div class="topbar__left">
+          <a class="home-nav-brand home-nav-brand--compact" href="/" aria-label="FocusGS Home">
+            <span class="home-nav-brand__logo-shell" aria-hidden="true">
+              <img class="home-nav-brand__logo home-nav-brand__logo--light" src="/logo.png" alt="" />
+              <img class="home-nav-brand__logo home-nav-brand__logo--dark" src="/logo-dark.png" alt="" />
+            </span>
+            <span class="home-nav-brand__text">
+              <span class="home-nav-brand__title">FocusGS</span>
+              <span class="home-nav-brand__subtitle">Memory-Efficient 3D Gaussian Splatting</span>
+            </span>
+          </a>
+          <div class="topbar__title-wrapper">
+             <p class="eyebrow">历史</p>
+             <h1>实验与结果记录</h1>
+          </div>
+        </div>
+        <div class="topbar__actions">
+          ${buildPageSwitch(scene.id, "history")}
+          <button class="btn btn--icon theme-toggle-btn" onclick="toggleTheme()" title="切换主题">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <aside class="sidebar sidebar--left">
+        <section class="panel">
+          <h2>筛选（Demo）</h2>
+          <p>scene · status · mode · date range</p>
+          <div class="sys-item" style="margin-top: 12px;">
+            <span>当前场景</span>
+            <p style="color: var(--text-main); margin: 0;">${scene.name}</p>
+          </div>
+          <div class="sys-item" style="margin-top: 12px;">
+            <span>快捷操作</span>
+            <p style="color: var(--text-main); margin: 0;">
+              <a href="/?page=train&scene=${scene.id}" style="color: var(--primary); text-decoration: none;">去训练页</a>
+            </p>
+          </div>
+        </section>
+      </aside>
+
+      <main class="viewer-shell">
+        <div class="viewer-tabs">
+          <button class="viewer-tab active" type="button">实验列表</button>
+          <button class="viewer-tab" type="button" disabled title="后续会做成右侧详情抽屉 + 对比视图。">对比视图（规划）</button>
+        </div>
+        <div class="log-stage" style="display:flex;">
+          <section class="panel" style="margin-bottom: 0;">
+            <h2>任务列表（Demo）</h2>
+            <pre class="code-log" style="margin:0; max-height: 380px; overflow:auto;"><code>• ${scene.id}-run-0001   success   checkpoint 30k
+• ${scene.id}-run-0002   failed    checkpoint 20k
+• ${scene.id}-resume     running   iteration 24k
+
+点击某条任务后，右侧会展示详情、日志摘要、输出路径与“断点续训”。</code></pre>
+          </section>
+        </div>
+      </main>
+
+      <aside class="sidebar sidebar--right">
+        <section class="panel">
+          <h2>详情（Demo）</h2>
+          <p>这里会显示：参数快照、log tail、输出体积、preview 链接。</p>
+          <div style="margin-top: 14px; display:flex; gap:10px; flex-wrap: wrap;">
+            <a class="btn btn--outline" href="/?page=train&scene=${scene.id}" style="text-decoration:none;">断点续训 → 训练</a>
+            <a class="btn btn--outline" href="/?scene=${scene.id}" style="text-decoration:none;">回到展示</a>
+          </div>
+        </section>
+      </aside>
+    </div>
+  `;
 }

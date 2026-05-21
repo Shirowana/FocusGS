@@ -1,6 +1,6 @@
 // src/main.js
 import { loadScenes, getSceneFromQuery } from "./config/loadScenes.js";
-import { renderHomePage, renderWorkspacePage } from "./ui/renderApp.js";
+import { renderHomePage, renderWorkspacePage, renderTrainPage, renderHistoryPage } from "./ui/renderApp.js";
 import { getHistoryByScene } from "./config/loadHistory.js";
 import { createViewer } from "./viewer/createViewer.js";
 import { loadSceneIntoViewer } from "./viewer/loadScene.js";
@@ -88,6 +88,13 @@ function prefersReducedMotion() {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
+function getPageKey(search = window.location.search) {
+  const params = new URLSearchParams(search);
+  const explicit = params.get("page");
+  if (explicit) return explicit;
+  return params.has("scene") ? "showcase" : "home";
+}
+
 function ensureTransitionOverlay() {
   let overlay = document.querySelector(".page-transition");
   if (overlay) return overlay;
@@ -143,10 +150,6 @@ function animatePageSwitch(link) {
   const currentPage = switchRoot.dataset.active;
   if (!targetPage || targetPage === currentPage) return;
 
-  switchRoot.classList.remove("is-sliding-left", "is-sliding-right");
-  void switchRoot.offsetWidth;
-  switchRoot.classList.add(targetPage === "workspace" ? "is-sliding-right" : "is-sliding-left");
-
   switchRoot.dataset.active = targetPage;
   switchRoot.querySelectorAll(".page-switch__item").forEach((item) => {
     const isActive = item.dataset.page === targetPage;
@@ -170,11 +173,11 @@ function setupPageTransitions() {
     if (url.origin !== window.location.origin) return;
 
     const isPageSwitch = link.classList.contains("page-switch__item");
-    const currentHasScene = new URLSearchParams(window.location.search).has("scene");
-    const nextHasScene = url.searchParams.has("scene");
-    const isHomeWorkspaceToggle = currentHasScene !== nextHasScene;
+    const currentPage = getPageKey(window.location.search);
+    const nextPage = getPageKey(url.search);
+    const isNavigationChange = currentPage !== nextPage;
 
-    if (!isPageSwitch && !isHomeWorkspaceToggle) return;
+    if (!isPageSwitch && !isNavigationChange) return;
 
     event.preventDefault();
 
@@ -232,21 +235,38 @@ window.focusGSStudioResetView = function () {
 async function bootstrap() {
   try {
     const scenes = await loadScenes();
-    const selectedScene = getSceneFromQuery(scenes);
+    const page = getPageKey(window.location.search);
+    let selectedScene = getSceneFromQuery(scenes);
 
-    if (!selectedScene) {
+    if (page === "home") {
       renderHomePage(scenes);
       playPageEnterTransition();
       return;
     }
 
-    const history = await getHistoryByScene(selectedScene.id).catch(() => []);
+    if (!selectedScene) {
+      selectedScene = scenes[0] || null;
+    }
+
+    if (page === "train") {
+      renderTrainPage(scenes, selectedScene);
+      playPageEnterTransition();
+      return;
+    }
+
+    if (page === "history") {
+      renderHistoryPage(scenes, selectedScene);
+      playPageEnterTransition();
+      return;
+    }
+
+    const history = selectedScene ? await getHistoryByScene(selectedScene.id).catch(() => []) : [];
     renderWorkspacePage(scenes, selectedScene, history);
 
     const statusEl = document.getElementById("status");
     const overlayEl = document.getElementById("status-overlay");
     const viewerRoot = document.getElementById("viewer");
-    const embedUrl = selectedScene.webViewer?.embedUrl;
+    const embedUrl = selectedScene?.webViewer?.embedUrl;
 
     setStudioViewerBridge();
 

@@ -28,7 +28,15 @@ const LOCAL_VIDEO_ROOTS = [
   path.resolve(FRONTEND_ROOT, "figures"),
 ].filter(Boolean);
 const CONDA_BIN = process.env.FOCUSGS_CONDA_BIN || process.env.CONDA_EXE || "conda";
-const CONDA_ENV_NAME = process.env.FOCUSGS_CONDA_ENV || "MEGS2";
+const CONDA_ENV_CANDIDATES = Array.from(
+  new Set(
+    [
+      process.env.FOCUSGS_CONDA_ENV,
+      "MEGS2",
+      "focus",
+    ].filter(Boolean),
+  ),
+);
 const PYTHON_BIN = process.env.FOCUSGS_PYTHON || null;
 const MAX_HISTORY_JOBS = 30;
 
@@ -328,6 +336,18 @@ function stripAnsiCodes(text = "") {
 
 function shellQuote(value) {
   return `'${String(value).replace(/'/g, `'\"'\"'`)}'`;
+}
+
+function buildCondaActivationCommand() {
+  const attempts = CONDA_ENV_CANDIDATES
+    .map((name) => `conda activate ${shellQuote(name)} >/dev/null 2>&1 && export FOCUSGS_ACTIVE_CONDA_ENV=${shellQuote(name)}`)
+    .join(" || ");
+
+  return `${attempts} || { echo "No usable conda env found. Tried: ${CONDA_ENV_CANDIDATES.join(", ")}" >&2; exit 1; }`;
+}
+
+function getCondaLauncherLabel() {
+  return `conda:${CONDA_ENV_CANDIDATES.join("|")}`;
 }
 
 function createInitialTrainingProgress(job) {
@@ -636,9 +656,9 @@ function resolveTrainingLaunchCommand(job) {
     command: "bash",
     args: [
       "-lc",
-      `source ${shellQuote(CONDA_SH)} && conda activate ${shellQuote(CONDA_ENV_NAME)} && exec python -u ${trainArgs.map(shellQuote).join(" ")}`,
+      `source ${shellQuote(CONDA_SH)} && ${buildCondaActivationCommand()} && exec python -u ${trainArgs.map(shellQuote).join(" ")}`,
     ],
-    descriptor: `conda-activate:${CONDA_ENV_NAME}`,
+    descriptor: `conda-activate:${CONDA_ENV_CANDIDATES.join("|")}`,
   };
 }
 
@@ -886,7 +906,13 @@ async function pruneOldJobs() {
 async function verifyTrainingRuntime() {
   const script = `
 import importlib.util
-missing = [name for name in ["torch", "diff_gaussian_rasterization_ms"] if importlib.util.find_spec(name) is None]
+required = [
+    "torch",
+    "diff_gaussian_rasterization",
+    "diff_gaussian_rasterization_ms",
+    "simple_knn",
+]
+missing = [name for name in required if importlib.util.find_spec(name) is None]
 print(",".join(missing))
 `.trim();
 
@@ -897,7 +923,7 @@ print(",".join(missing))
   } else {
     const result = await execFileAsync(
       "bash",
-      ["-lc", `source ${shellQuote(CONDA_SH)} && conda activate ${shellQuote(CONDA_ENV_NAME)} && python -c ${shellQuote(script)}`],
+      ["-lc", `source ${shellQuote(CONDA_SH)} && ${buildCondaActivationCommand()} && python -c ${shellQuote(script)}`],
       {
         cwd: MEGS2_ROOT,
         env: process.env,
@@ -1203,7 +1229,7 @@ async function createTrainingJob(formData) {
     message: creationMessage,
     timeline,
     process: null,
-    launcher: PYTHON_BIN ? `python:${PYTHON_BIN}` : `conda:${CONDA_ENV_NAME}`,
+    launcher: PYTHON_BIN ? `python:${PYTHON_BIN}` : getCondaLauncherLabel(),
     exitCode: null,
     error: null,
     logTail: [],
@@ -1297,7 +1323,7 @@ async function createResumeTrainingJob(formData) {
       "结果导出",
     ],
     process: null,
-    launcher: PYTHON_BIN ? `python:${PYTHON_BIN}` : `conda:${CONDA_ENV_NAME}`,
+    launcher: PYTHON_BIN ? `python:${PYTHON_BIN}` : getCondaLauncherLabel(),
     exitCode: null,
     error: null,
     logTail: [],
