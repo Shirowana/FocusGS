@@ -65,7 +65,7 @@ http://localhost:4173/?scene=room
 - 本地 API：`backend/local-api/index.js`
 - 算法入口：`algorithms/MEGS-2/train.py`
 - 默认数据目录：`data/mipnerf360/`
-- 运行期任务目录：`frontend/gs-browser-viewer/.runtime/jobs/`
+- 运行期任务目录：`history/`
 
 ### 3. 数据与结果
 
@@ -74,6 +74,6 @@ http://localhost:4173/?scene=room
 
 ## 说明
 
-- `data/`、`runs/`、`.runtime/` 都属于本地工作区内容，不是轻量源码快照的一部分。
+- `data/`、`runs/`、`history/`、`.runtime/` 都属于本地工作区内容，不是轻量源码快照的一部分。
 - `frontend/gs-browser-viewer/public/assets/` 当前使用软链接指向 `data/pretrained_models/`。
 - 根目录下的 `docs/` 保存整理文档、开发提示和待办说明。

@@ -17,6 +17,8 @@ import megs2OverviewImage from "../../figures/3e12860e6003878673d08e1b053c270c.p
 import assetCardAImage from "../../figures/A_transparent.png";
 import assetCardBImage from "../../figures/B_transparent.png";
 import assetCardCImage from "../../figures/C_transparent.png";
+import { createViewer } from "../viewer/createViewer.js";
+import * as GaussianSplats3D from "@mkkellogg/gaussian-splats-3d";
 
 const ACTIVE_WORKSPACE_JOB_STORAGE_KEY = "focusgs-active-workspace-job";
 const EXPORT_DEMO_TRIGGER_KEY = "x";
@@ -1115,7 +1117,7 @@ function buildPageSwitch(sceneId = "garden", activePage = "home") {
       </a>
       <a
         class="page-switch__item ${activePage === "history" ? "is-active" : ""}"
-        href="/?page=history&scene=${sceneId}"
+        href="/?page=history"
         data-page="history"
         role="tab"
         aria-selected="${activePage === "history"}"
@@ -1474,13 +1476,13 @@ function buildTrainingProgressPanel() {
       <div class="training-progress-card__bar">
         <span id="training-progress-bar"></span>
       </div>
-      <div class="training-progress-card__meta">
-        <span id="training-progress-iteration">0 / 30000 iter</span>
-        <span id="training-progress-state">尚未提交任务</span>
-      </div>
-    </div>
-  `;
-}
+	      <div class="training-progress-card__meta">
+	        <span id="training-progress-iteration" style="display:none;"></span>
+	        <span id="training-progress-state">尚未提交任务</span>
+	      </div>
+	    </div>
+	  `;
+	}
 
 function buildTrainingRuntimePanel() {
   return `
@@ -1933,6 +1935,49 @@ function buildExportDemoDialog(sceneName = "counter") {
   `;
 }
 
+function buildTrainingCompletionDialog({ sceneId = "garden", job = {} } = {}) {
+  const jobId = job?.id || "";
+  const sceneName = job?.sceneName || sceneId || "scene";
+  const outputPath = job?.modelPath || "";
+  const logPath = job?.logPath || "";
+  const preview = job?.preview || null;
+
+  const detailLines = [
+    jobId ? `job_id=${jobId}` : "",
+    outputPath ? `output=${outputPath}` : "",
+    logPath ? `log=${logPath}` : "",
+    preview?.filePath ? `preview=${preview.filePath}` : "",
+  ].filter(Boolean);
+
+  return `
+    <div class="export-demo-modal is-visible" id="train-done-modal" aria-hidden="false">
+      <div class="export-demo-modal__backdrop" data-history-modal-close="true"></div>
+      <div class="export-demo-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="train-done-title">
+        <div class="export-demo-modal__hero">
+          <div class="export-demo-modal__copy">
+            <p class="export-demo-modal__eyebrow">TRAINING COMPLETE</p>
+            <h3 id="train-done-title">训练完成</h3>
+            <p class="export-demo-modal__lead">${sceneName} 的训练已结束，结果与日志已保存到本地。你可以去「历史」页面查看本次任务详情、输出路径与后续续训入口。</p>
+            ${detailLines.length ? `
+              <div class="export-demo-modal__paths">
+                <div>
+                  <span>本次任务</span>
+                  <code>${detailLines.join("\n")}</code>
+                </div>
+              </div>
+            ` : ""}
+            <div style="margin-top: 14px; display:flex; gap:10px; flex-wrap:wrap;">
+              <a class="btn btn--primary" href="/?page=history&scene=${sceneId}&job=${encodeURIComponent(jobId)}&tab=overview" style="text-decoration:none;">去历史与结果</a>
+              <button type="button" class="btn btn--outline" data-history-modal-close="true">继续留在训练页</button>
+            </div>
+          </div>
+          <button type="button" class="export-demo-modal__close" data-history-modal-close="true" aria-label="关闭">×</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function getTimelineItemStatusClass(status = "pending") {
   return `timeline-item is-${status}`;
 }
@@ -1956,6 +2001,33 @@ function buildWorkspaceTimelineMarkup(modeConfig, progressIndex = -1) {
   return `
     <h2>阶段时间线</h2>
     <div class="timeline">${steps}</div>
+  `;
+}
+
+function buildWorkspaceTimelineInlineMarkup(modeConfig, progressIndex = -1) {
+  const steps = modeConfig.timelineSteps
+    .map((step, index) => {
+      const status = progressIndex < 0 ? "pending" : index < progressIndex ? "success" : index === progressIndex ? "running" : "pending";
+      const statusClass =
+        status === "success" ? "is-success" : status === "running" ? "is-running" : "is-pending";
+      return `
+        <div class="train-timeline-step ${statusClass}" title="${step.detail}">
+          <div class="train-timeline-step__dot" aria-hidden="true"></div>
+          <div class="train-timeline-step__meta">
+            <span class="train-timeline-step__index">${index + 1}</span>
+            <strong class="train-timeline-step__title">${step.title}</strong>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+
+  return `
+    <section class="train-timeline" aria-label="阶段时间线">
+      <div class="train-timeline__rail">
+        ${steps}
+      </div>
+    </section>
   `;
 }
 
@@ -2026,7 +2098,7 @@ function buildWorkspaceParameterSnapshot(modeKey = "images", parameterValues = {
   }));
 }
 
-function buildWorkspaceParamsMarkup(modeKey = "images", parameterValues = {}, canStartTask = false, context = {}, isLocked = false, isCollapsed = false) {
+function buildWorkspaceParamsMarkup(modeKey = "images", parameterValues = {}, canStartTask = false, context = {}, isLocked = false) {
   const groups = getWorkspaceParameterPreset(modeKey, context);
   const groupMarkup = groups
     .map(
@@ -2047,9 +2119,7 @@ function buildWorkspaceParamsMarkup(modeKey = "images", parameterValues = {}, ca
   return `
     <div class="workspace-params-header">
       <h2>重建参数</h2>
-      <button type="button" class="workspace-params-collapse" id="workspace-params-collapse">${isCollapsed ? "展开" : "收起"}</button>
     </div>
-    <div class="workspace-params-body ${isCollapsed ? "is-collapsed" : ""}">${groupMarkup}</div>
     <div class="workspace-params-actions">
       <button
         type="button"
@@ -2068,6 +2138,7 @@ function buildWorkspaceParamsMarkup(modeKey = "images", parameterValues = {}, ca
         中断重建
       </button>
     </div>
+    <div class="workspace-params-body">${groupMarkup}</div>
   `;
 }
 
@@ -2098,24 +2169,44 @@ function buildWorkspaceJobPayload({ modeConfig, sceneName, selectionSummary, sta
   return payload;
 }
 
-function setWorkspaceJobPreview({ modeConfig, sceneName, selectionSummary, status = "idle", progressIndex = -1, logBadgeText = "", parameterValues = {}, parameterContext = {}, runtimeMeta = {} }) {
+function setWorkspaceJobPreview({
+  modeConfig,
+  sceneName,
+  selectionSummary,
+  status = "idle",
+  progressIndex = -1,
+  logBadgeText = "",
+  parameterValues = {},
+  parameterContext = {},
+  runtimeMeta = {},
+}) {
   const codeBlock = document.getElementById("json-log-content");
   const logBadge = document.getElementById("log-status-badge");
   if (codeBlock) {
-    codeBlock.textContent = JSON.stringify(
-      buildWorkspaceJobPayload({
-        modeConfig,
-        sceneName,
-        selectionSummary,
-        status,
-        progressIndex,
-        parameterValues,
-        parameterContext,
-        runtimeMeta,
-      }),
-      null,
-      2,
-    );
+    const hasRuntimeLogs = Boolean(runtimeMeta?.log_excerpt)
+      || (Array.isArray(runtimeMeta?.log_tail) && runtimeMeta.log_tail.length);
+    // When a real job is running/queued/etc, prefer showing training logs.
+    // During idle, show the job.json preview so users can inspect the payload snapshot.
+    if (status && status !== "idle" && hasRuntimeLogs) {
+      const excerpt = runtimeMeta?.log_excerpt;
+      const tail = Array.isArray(runtimeMeta?.log_tail) ? runtimeMeta.log_tail.join("\n") : "";
+      codeBlock.textContent = (excerpt || tail || "等待首批训练日志...").trim();
+    } else {
+      codeBlock.textContent = JSON.stringify(
+        buildWorkspaceJobPayload({
+          modeConfig,
+          sceneName,
+          selectionSummary,
+          status,
+          progressIndex,
+          parameterValues,
+          parameterContext,
+          runtimeMeta,
+        }),
+        null,
+        2,
+      );
+    }
   }
 
   if (logBadge) {
@@ -2286,7 +2377,6 @@ function setupWorkspaceInteraction(selectedScene) {
     mode: "images",
     modeActivated: false,
     sceneGuideCollapsed: false,
-    paramsCollapsed: false,
     selectedFiles: [],
     selectionMeta: {},
     selectionSummary: "尚未选择输入源",
@@ -2308,7 +2398,10 @@ function setupWorkspaceInteraction(selectedScene) {
     resumeSubmitting: false,
     exportDemoPhase: null,
     exportDemoTimer: null,
+    completionModalShownJobId: null,
   };
+  // Prevent unnecessary rerenders: only rebuild the params DOM when lock-state flips.
+  let lastParamsLocked = null;
 
   // 1. 中间 Viewer/Log Tabs 切换
   const tabViewer = document.getElementById("tab-viewer");
@@ -2319,7 +2412,9 @@ function setupWorkspaceInteraction(selectedScene) {
   const sceneGuideToggle = document.getElementById("scene-guide-toggle");
   const workspaceViewerOverlay = document.getElementById("workspace-viewer-overlay");
   const workspaceViewerExpandBtn = document.getElementById("workspace-expand-scene-guide");
-  const timelinePanel = document.getElementById("timeline-panel");
+  const timelinePanel =
+    document.getElementById("timeline-panel")
+    || document.getElementById("train-timeline-inline");
   const paramsPanel = document.getElementById("workspace-params-panel");
   const detailPanels = document.querySelectorAll(".workspace-detail-panel");
   const segmentButtons = Array.from(document.querySelectorAll(".segment[data-input-mode]"));
@@ -2359,6 +2454,8 @@ function setupWorkspaceInteraction(selectedScene) {
   }
 
   function isWorkspaceParamsLocked() {
+    // Keep original intent: lock hyper-params while submitting or when a job is active/cancelling.
+    // The Start/Cancel buttons remain controlled by `updateStartButtonState()`.
     return workspaceState.isSubmitting || hasActiveWorkspaceJob() || workspaceState.jobStatus === "cancelling";
   }
 
@@ -2460,7 +2557,12 @@ function setupWorkspaceInteraction(selectedScene) {
   function renderTimeline(modeKey, progressIndex = -1) {
     const modeConfig = getActiveTimelineConfig(modeKey);
     if (!timelinePanel) return;
-    timelinePanel.innerHTML = buildWorkspaceTimelineMarkup(modeConfig, progressIndex);
+    // Train page uses the inline horizontal timeline docked under the progress card.
+    if (timelinePanel.id === "train-timeline-inline") {
+      timelinePanel.innerHTML = buildWorkspaceTimelineInlineMarkup(modeConfig, progressIndex);
+    } else {
+      timelinePanel.innerHTML = buildWorkspaceTimelineMarkup(modeConfig, progressIndex);
+    }
   }
 
   function renderParams(modeKey) {
@@ -2471,7 +2573,6 @@ function setupWorkspaceInteraction(selectedScene) {
       canStartWorkspaceTask(),
       getWorkspaceParameterContext(),
       isWorkspaceParamsLocked(),
-      workspaceState.paramsCollapsed,
     );
     updateStartButtonState();
   }
@@ -2569,17 +2670,22 @@ function setupWorkspaceInteraction(selectedScene) {
       currentIteration = resumeFromIteration;
     }
 
-    let percent = Number(trainingProgress.percent ?? runtimeMeta.progress_percent);
-    if (!hasRealIterationProgress) {
-      percent = Number(runtimeMeta.fake_progress_percent);
-      if (!Number.isFinite(percent)) {
-        percent = runtimeMeta.source_strategy === "local-path" ? 8 : 2;
-      }
-    } else if (!Number.isFinite(percent)) {
-      if (snapshot.status === "success") {
-        percent = 100;
-      } else if (snapshot.status === "running") {
-        const normalizedIndex = snapshot.progressIndex >= 0 ? Math.min(snapshot.progressIndex, Math.max(totalSteps - 1, 0)) : 0;
+	    let percent = Number(trainingProgress.percent ?? runtimeMeta.progress_percent);
+	    if (!hasRealIterationProgress) {
+	      // Idle state should always start at 0%. Only show "fake" progress once a job is actually running/queued.
+	      if (!snapshot.status || snapshot.status === "idle") {
+	        percent = 0;
+	      } else {
+	        percent = Number(runtimeMeta.fake_progress_percent);
+	        if (!Number.isFinite(percent)) {
+	          percent = runtimeMeta.source_strategy === "local-path" ? 8 : 2;
+	        }
+	      }
+	    } else if (!Number.isFinite(percent)) {
+	      if (snapshot.status === "success") {
+	        percent = 100;
+	      } else if (snapshot.status === "running") {
+	        const normalizedIndex = snapshot.progressIndex >= 0 ? Math.min(snapshot.progressIndex, Math.max(totalSteps - 1, 0)) : 0;
         percent = totalSteps > 1 ? Math.round((normalizedIndex / (totalSteps - 1)) * 100) : 0;
       } else {
         percent = 0;
@@ -2616,15 +2722,21 @@ function setupWorkspaceInteraction(selectedScene) {
       || snapshot.logBadgeText
       || "等待新的训练任务";
 
-    card.dataset.status = snapshot.status || "idle";
-    phaseEl.textContent = phase;
-    percentEl.textContent = `${Math.max(0, Math.min(100, Math.round(percent)))}%`;
-    barEl.style.width = `${Math.max(0, Math.min(100, percent))}%`;
-    iterationEl.textContent = hasRealIterationProgress
-      ? `${Math.max(0, Math.round(currentIteration))} / ${totalIterations} iter`
-      : "准备训练环境中";
-    stateEl.textContent = stateText;
-  }
+	    card.dataset.status = snapshot.status || "idle";
+	    phaseEl.textContent = phase;
+	    percentEl.textContent = `${Math.max(0, Math.min(100, Math.round(percent)))}%`;
+	    barEl.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+	    const shouldShowIteration = Boolean(snapshot.status && snapshot.status !== "idle");
+	    iterationEl.style.display = shouldShowIteration ? "inline" : "none";
+	    if (shouldShowIteration) {
+	      iterationEl.textContent = hasRealIterationProgress
+	        ? `${Math.max(0, Math.round(currentIteration))} / ${totalIterations} iter`
+	        : "准备训练环境中";
+	    } else {
+	      iterationEl.textContent = "";
+	    }
+	    stateEl.textContent = stateText;
+	  }
 
   function syncJobPreview(overrides = {}) {
     workspaceState.jobStatus = overrides.status ?? workspaceState.jobStatus;
@@ -2632,6 +2744,12 @@ function setupWorkspaceInteraction(selectedScene) {
     workspaceState.logBadgeText = overrides.logBadgeText ?? workspaceState.logBadgeText;
     workspaceState.runtimeMeta = overrides.runtimeMeta ?? workspaceState.runtimeMeta;
     window.focusGSWorkspaceRuntime.jobStatus = workspaceState.jobStatus;
+
+    const paramsLocked = isWorkspaceParamsLocked();
+    if (paramsLocked !== lastParamsLocked) {
+      lastParamsLocked = paramsLocked;
+      renderParams(workspaceState.mode);
+    }
 
     setWorkspaceJobPreview({
       modeConfig: getWorkspaceInputMode(workspaceState.mode),
@@ -2663,12 +2781,6 @@ function setupWorkspaceInteraction(selectedScene) {
       runtimeMeta: workspaceState.runtimeMeta,
       preview: workspaceState.runtimeMeta?.preview || null,
     });
-    const paramsBody = paramsPanel?.querySelector(".workspace-params-body");
-    const shouldRefreshParams =
-      Boolean(paramsBody?.classList.contains("is-collapsed")) !== workspaceState.paramsCollapsed;
-    if (shouldRefreshParams) {
-      renderParams(workspaceState.mode);
-    }
     updateStartButtonState();
   }
 
@@ -2693,7 +2805,6 @@ function setupWorkspaceInteraction(selectedScene) {
 
     workspaceState.exportDemoPhase = phaseKey;
     workspaceState.modeActivated = true;
-    workspaceState.paramsCollapsed = true;
     setWorkspaceDetailPanelsHidden(true);
     setSceneGuideCollapsed(true, "auto");
     setTimelineVisible(true);
@@ -2815,7 +2926,6 @@ function setupWorkspaceInteraction(selectedScene) {
       trainingProgress: job.trainingProgress || {},
       preview: job.preview || null,
     };
-    workspaceState.paramsCollapsed = true;
     applyServerJob(job, logs);
     switchTab("log");
     return job;
@@ -3020,7 +3130,6 @@ function setupWorkspaceInteraction(selectedScene) {
     workspaceState.mode = modeConfig.key;
     workspaceState.modeActivated = triggeredByUser ? true : workspaceState.modeActivated;
     workspaceState.colmapImageDirs = [];
-    workspaceState.paramsCollapsed = false;
     workspaceState.paramValues = getWorkspaceDefaultParamValues(modeConfig.key, workspaceState.paramValues, getWorkspaceParameterContext());
     workspaceState.jobStatus = "idle";
     workspaceState.progressIndex = -1;
@@ -3097,6 +3206,11 @@ function setupWorkspaceInteraction(selectedScene) {
     workspaceState.selectedFiles = validation.files;
     workspaceState.selectionMeta = validation.meta || {};
     workspaceState.colmapImageDirs = validation.meta?.imageDirs || [];
+    // Consider the user "activated" the mode once they've provided an input selection.
+    // This keeps the CTA buttons behavior consistent with earlier iterations.
+    if (validation.ok) {
+      workspaceState.modeActivated = true;
+    }
     workspaceState.paramValues = getWorkspaceDefaultParamValues(workspaceState.mode, workspaceState.paramValues, getWorkspaceParameterContext());
     workspaceState.selectionSummary = validation.message;
     workspaceState.runtimeMeta =
@@ -3236,6 +3350,13 @@ function setupWorkspaceInteraction(selectedScene) {
       clearFakeProgressTimer();
       clearJobPollTimer();
       void refreshTrainingHistory();
+      // The previous input selection is tied to the finished run; clear it so the "创建任务" panel
+      // doesn't keep showing stale "已选择..." text after a terminal state (failed/cancelled/success).
+      workspaceState.selectedFiles = [];
+      workspaceState.selectionMeta = {};
+      workspaceState.colmapImageDirs = [];
+      updateDropzoneState("尚未选择输入源", "idle");
+      renderParams(workspaceState.mode);
     } else if (job.id) {
       workspaceState.activeJobId = job.id;
       persistActiveWorkspaceJobId(job.id);
@@ -3283,6 +3404,16 @@ function setupWorkspaceInteraction(selectedScene) {
         log_excerpt: logs ? getLogExcerpt(logs) : undefined,
       },
     });
+
+    if (
+      job.state === "success"
+      && !isExportDemoActive()
+      && historyModalRoot
+      && workspaceState.completionModalShownJobId !== job.id
+    ) {
+      workspaceState.completionModalShownJobId = job.id;
+      historyModalRoot.innerHTML = buildTrainingCompletionDialog({ sceneId: selectedScene?.id || "garden", job });
+    }
 
     if (job.state === "success" && job.preview?.url) {
       switchTab("viewer");
@@ -3346,7 +3477,6 @@ function setupWorkspaceInteraction(selectedScene) {
         trainingProgress: job.trainingProgress || {},
         preview: job.preview || null,
       };
-      workspaceState.paramsCollapsed = true;
       applyServerJob(job, logs);
       switchTab("log");
       scheduleTrainingJobPoll(job.id, 1200);
@@ -3442,7 +3572,6 @@ function setupWorkspaceInteraction(selectedScene) {
     formData.set("manifest", JSON.stringify(manifest));
 
     workspaceState.isSubmitting = true;
-    workspaceState.paramsCollapsed = true;
     renderTimeline(modeConfig.key, 0);
     syncJobPreview({
       status: "queued",
@@ -3455,6 +3584,13 @@ function setupWorkspaceInteraction(selectedScene) {
         upload_count: 0,
         selected_image_dir: workspaceState.paramValues.input_image_dir,
         sparse_root: workspaceState.paramValues.sparse_root,
+        log_excerpt: [
+          "[FocusGS] 正在创建训练任务...",
+          `mode=${workspaceState.mode}`,
+          `scene=${getResolvedWorkspaceSceneName(getWorkspaceSceneName())}`,
+          `input_image_dir=${workspaceState.paramValues.input_image_dir}`,
+          `sparse_root=${workspaceState.paramValues.sparse_root}`,
+        ].join("\n"),
         trainingProgress: {},
         fake_progress_percent: 0,
         fake_progress_label: "正在定位本地数据目录",
@@ -3498,6 +3634,7 @@ function setupWorkspaceInteraction(selectedScene) {
           runtimeMeta: {
             ...workspaceState.runtimeMeta,
             error: "上传已中断",
+            log_excerpt: "[FocusGS] 已中断：上传被用户取消。",
           },
         });
         updateDropzoneState("上传已中断", "error");
@@ -3514,6 +3651,7 @@ function setupWorkspaceInteraction(selectedScene) {
         runtimeMeta: {
           ...workspaceState.runtimeMeta,
           error: error instanceof Error ? error.message : "创建训练任务失败。",
+          log_excerpt: `[FocusGS] 创建训练任务失败：${error instanceof Error ? error.message : "未知错误"}`,
         },
       });
       updateDropzoneState(error instanceof Error ? error.message : "创建训练任务失败。", "error");
@@ -3538,7 +3676,6 @@ function setupWorkspaceInteraction(selectedScene) {
 
     setWorkspaceDetailPanelsHidden(true);
     setSceneGuideCollapsed(true, "auto");
-    workspaceState.paramsCollapsed = true;
     renderParams(workspaceState.mode);
     setTimelineVisible(true);
     setParamsVisible(true);
@@ -3619,7 +3756,6 @@ function setupWorkspaceInteraction(selectedScene) {
       });
 
       workspaceState.modeActivated = true;
-      workspaceState.paramsCollapsed = true;
       workspaceState.isSubmitting = false;
       workspaceState.activeJobId = job.id;
       persistActiveWorkspaceJobId(job.id);
@@ -3757,15 +3893,36 @@ function setupWorkspaceInteraction(selectedScene) {
 
   setupSceneGallery(selectedScene);
 
-  paramsPanel?.addEventListener("click", (event) => {
-    if (isExportDemoActive()) return;
-    const collapseButton = event.target.closest("#workspace-params-collapse");
-    if (collapseButton) {
-      workspaceState.paramsCollapsed = !workspaceState.paramsCollapsed;
-      renderParams(workspaceState.mode);
-      return;
-    }
-  });
+  // Wheel on <input type="number"> often changes the value instead of scrolling.
+  // We capture that wheel and forward it to the nearest real scroll container.
+  paramsPanel?.addEventListener(
+    "wheel",
+    (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement)) return;
+      if (target.type !== "number") return;
+      if (!paramsPanel) return;
+
+      event.preventDefault();
+
+      const sidebar = paramsPanel.closest(".sidebar");
+      const panelCanScroll = paramsPanel.scrollHeight > paramsPanel.clientHeight + 2;
+      const sidebarCanScroll = Boolean(sidebar && sidebar.scrollHeight > sidebar.clientHeight + 2);
+
+      if (panelCanScroll) {
+        paramsPanel.scrollTop += event.deltaY;
+        return;
+      }
+
+      if (sidebar && sidebarCanScroll) {
+        sidebar.scrollTop += event.deltaY;
+        return;
+      }
+
+      window.scrollBy({ top: event.deltaY });
+    },
+    { passive: false },
+  );
 
   paramsPanel?.addEventListener("click", (event) => {
     const button = event.target.closest("#workspace-start-training");
@@ -3829,6 +3986,24 @@ function setupWorkspaceInteraction(selectedScene) {
   }
   updateHistoryPanel([]);
   void refreshTrainingHistory();
+  // Deep link from History: /?page=train&scene=...&resume=<jobId>
+  if (shouldShowTrainingPanels) {
+    const resumeJobId = new URLSearchParams(window.location.search).get("resume") || "";
+    if (resumeJobId) {
+      void (async () => {
+        try {
+          const jobs = await fetchTrainingHistory();
+          updateHistoryPanel(jobs);
+          const target = jobs.find((item) => item.id === resumeJobId);
+          if (target?.canResume) {
+            openHistoryResumeModal(target);
+          }
+        } catch {
+          // If history fetch fails, we simply skip the auto-open behavior.
+        }
+      })();
+    }
+  }
   void restoreActiveWorkspaceJob();
 }
 
@@ -4150,7 +4325,7 @@ export function renderTrainPage(scenes, selectedScene) {
   const scene = selectedScene || scenes?.[0] || { id: "garden", name: "Garden" };
 
   document.getElementById("app").innerHTML = `
-    <div class="layout studio-layout">
+    <div class="layout studio-layout studio-layout--train">
       <header class="topbar">
         <div class="topbar__left">
           <a class="home-nav-brand home-nav-brand--compact" href="/" aria-label="FocusGS Home">
@@ -4211,25 +4386,16 @@ export function renderTrainPage(scenes, selectedScene) {
       </aside>
 
       <main class="viewer-shell">
-        <div class="viewer-tabs">
-          <button class="viewer-tab" id="tab-viewer" type="button" disabled title="训练过程中打开 Viewer 可能导致 OOM；完成后会自动切换。">Viewer 预览（训练中禁用）</button>
-          <button class="viewer-tab active" id="tab-log" type="button">Timeline + Log</button>
-        </div>
-
-        <div class="viewer-stage" id="view-stage" style="display: none;">
-          <div class="viewer-overlay" id="status-overlay">
-              <div class="viewer-spinner"></div>
-              <span>Viewer is disabled during training to avoid OOM.</span>
-          </div>
-          <div class="viewer-status-text" id="status">Viewer disabled</div>
-          <div id="viewer"></div>
+        <div class="viewer-tabs viewer-tabs--title">
+          <div class="viewer-tabs__title">日志记录</div>
         </div>
 
         <div class="log-stage" id="log-stage" style="display: flex;">
           ${buildTrainingProgressPanel()}
+          <div class="train-timeline-inline" id="train-timeline-inline"></div>
           <div class="log-header">
             <div class="log-title">
-              <strong>job.json</strong>
+              <strong>训练日志</strong>
               <div class="log-badge" id="log-status-badge">
                  <span class="status-dot status-dot--success"></span>
                  任务空闲
@@ -4243,11 +4409,6 @@ export function renderTrainPage(scenes, selectedScene) {
       </main>
 
       <aside class="sidebar sidebar--right">
-        <section class="panel timeline-panel" id="timeline-panel">
-          <h2>阶段时间线</h2>
-          <div class="timeline"></div>
-        </section>
-
         <section class="panel workspace-params-panel" id="workspace-params-panel">
           <h2>重建参数</h2>
         </section>
@@ -4269,9 +4430,12 @@ export function renderHistoryPage(scenes, selectedScene) {
   document.title = `历史 | ${selectedScene?.name || "FocusGS"}`;
 
   const scene = selectedScene || scenes?.[0] || { id: "garden", name: "Garden" };
+  const sceneOptions = (Array.isArray(scenes) ? scenes : [])
+    .map((item) => `<option value="${item.id}">${item.name || item.id}</option>`)
+    .join("");
 
   document.getElementById("app").innerHTML = `
-    <div class="layout studio-layout">
+    <div class="layout studio-layout studio-layout--history">
       <header class="topbar">
         <div class="topbar__left">
           <a class="home-nav-brand home-nav-brand--compact" href="/" aria-label="FocusGS Home">
@@ -4297,50 +4461,1050 @@ export function renderHistoryPage(scenes, selectedScene) {
         </div>
       </header>
 
-      <aside class="sidebar sidebar--left">
-        <section class="panel">
-          <h2>筛选（Demo）</h2>
-          <p>scene · status · mode · date range</p>
-          <div class="sys-item" style="margin-top: 12px;">
-            <span>当前场景</span>
-            <p style="color: var(--text-main); margin: 0;">${scene.name}</p>
+      <main class="history-shell">
+        <aside class="history-favorites" aria-label="Favorites">
+          <div class="history-favorites__head">
+            <div>
+              <p class="history-favorites__eyebrow">FAVORITES</p>
+              <h2>收藏夹</h2>
+            </div>
+            <span class="history-count" id="history-fav-count">0</span>
           </div>
-          <div class="sys-item" style="margin-top: 12px;">
-            <span>快捷操作</span>
-            <p style="color: var(--text-main); margin: 0;">
-              <a href="/?page=train&scene=${scene.id}" style="color: var(--primary); text-decoration: none;">去训练页</a>
-            </p>
+          <div class="history-favorites__list" id="history-fav-list"></div>
+          <div class="history-favorites__editor" id="history-fav-editor" style="display:none;">
+            <div class="history-favorites__field">
+              <label for="history-fav-alias">重命名</label>
+              <input id="history-fav-alias" class="input-field" type="text" placeholder="给这个实验起个名字" />
+            </div>
+            <div class="history-favorites__field">
+              <label for="history-fav-note">备注</label>
+              <textarea id="history-fav-note" class="input-field" rows="4" placeholder="记录参数变化、对比结论、下一步计划..."></textarea>
+            </div>
+            <div class="history-favorites__actions">
+              <button type="button" class="btn btn--outline" id="history-fav-remove">取消收藏</button>
+              <button type="button" class="btn btn--primary" id="history-fav-save">保存</button>
+            </div>
           </div>
+          <div class="history-favorites__empty" id="history-fav-empty">
+            暂无收藏。你可以在右侧列表点 ☆ 收藏重要任务。
+          </div>
+        </aside>
+
+        <section class="history-main">
+          <div class="history-v1-toolbar" aria-label="History filters">
+            <div class="history-filter">
+              <div class="history-filter__field history-filter__field--search">
+                <label for="history-search" class="history-filter__label">搜索</label>
+                <input id="history-search" type="search" class="input-field" placeholder="scene / jobId / 关键词" />
+              </div>
+              <div class="history-filter__field">
+                <label for="history-scene-select" class="history-filter__label">场景</label>
+                <select id="history-scene-select" class="workspace-params-input">
+                  <option value="">All scenes</option>
+                  ${sceneOptions}
+                </select>
+              </div>
+              <div class="history-filter__field">
+                <label for="history-sort-select" class="history-filter__label">排序</label>
+                <select id="history-sort-select" class="workspace-params-input">
+                  <option value="updated_desc" selected>Updated ↓</option>
+                  <option value="created_desc">Created ↓</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="history-filter__chips">
+              <div class="segmented-control history-status-chips" id="history-status-chips">
+                <button class="segment active" type="button" data-status="all">All</button>
+                <button class="segment" type="button" data-status="running">Running</button>
+                <button class="segment" type="button" data-status="success">Success</button>
+                <button class="segment" type="button" data-status="failed">Failed</button>
+                <button class="segment" type="button" data-status="cancelled">Cancelled</button>
+              </div>
+              <span class="history-count" id="history-v1-count">—</span>
+            </div>
+          </div>
+
+          <div class="history-v1-list" id="history-v1-list" aria-label="History list"></div>
         </section>
-      </aside>
-
-      <main class="viewer-shell">
-        <div class="viewer-tabs">
-          <button class="viewer-tab active" type="button">实验列表</button>
-          <button class="viewer-tab" type="button" disabled title="后续会做成右侧详情抽屉 + 对比视图。">对比视图（规划）</button>
-        </div>
-        <div class="log-stage" style="display:flex;">
-          <section class="panel" style="margin-bottom: 0;">
-            <h2>任务列表（Demo）</h2>
-            <pre class="code-log" style="margin:0; max-height: 380px; overflow:auto;"><code>• ${scene.id}-run-0001   success   checkpoint 30k
-• ${scene.id}-run-0002   failed    checkpoint 20k
-• ${scene.id}-resume     running   iteration 24k
-
-点击某条任务后，右侧会展示详情、日志摘要、输出路径与“断点续训”。</code></pre>
-          </section>
-        </div>
       </main>
+    </div>
+    <div id="history-modal-root"></div>
+  `;
 
-      <aside class="sidebar sidebar--right">
-        <section class="panel">
-          <h2>详情（Demo）</h2>
-          <p>这里会显示：参数快照、log tail、输出体积、preview 链接。</p>
-          <div style="margin-top: 14px; display:flex; gap:10px; flex-wrap: wrap;">
-            <a class="btn btn--outline" href="/?page=train&scene=${scene.id}" style="text-decoration:none;">断点续训 → 训练</a>
-            <a class="btn btn--outline" href="/?scene=${scene.id}" style="text-decoration:none;">回到展示</a>
-          </div>
-        </section>
-      </aside>
+  setTimeout(() => {
+    setupHistoryPageInteraction(scenes, scene);
+  }, 0);
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function createHistoryPathActions(job) {
+  const workspacePath = String(job?.workspacePath || "");
+  const outputPath = String(job?.modelPath || "");
+  const logPath = String(job?.logPath || "");
+  const previewPath = String(job?.preview?.filePath || "");
+
+  return `
+    <div class="history-drawer__path-actions">
+      <button type="button" class="btn btn--xs btn--ghost" data-history-path-target="output" data-path="${escapeHtml(outputPath)}">结果目录</button>
+      <button type="button" class="btn btn--xs btn--ghost" data-history-path-target="log" data-path="${escapeHtml(logPath)}">日志目录</button>
+      ${previewPath ? `<button type="button" class="btn btn--xs btn--ghost" data-history-path-target="preview" data-path="${escapeHtml(previewPath)}">预览文件</button>` : ""}
+      ${workspacePath ? `<button type="button" class="btn btn--xs btn--ghost" data-history-path-target="workspace" data-path="${escapeHtml(workspacePath)}">数据目录</button>` : ""}
     </div>
   `;
+}
+
+function buildHistoryPathDialog({ title = "路径详情", path = "", note = "" } = {}) {
+  const safePath = escapeHtml(path || "—");
+  const safeNote = escapeHtml(note || "可以复制路径到本机文件管理器中打开。浏览器页面本身通常不能直接拉起系统文件夹。");
+  return `
+    <div class="history-path-modal is-visible" id="history-path-modal" aria-hidden="false">
+      <div class="history-path-modal__backdrop" data-history-path-close="true"></div>
+      <div class="history-path-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="history-path-title">
+        <div class="history-path-modal__head">
+          <div>
+            <p class="history-path-modal__eyebrow">LOCAL PATH</p>
+            <h3 id="history-path-title">${escapeHtml(title)}</h3>
+          </div>
+          <button type="button" class="history-path-modal__close" data-history-path-close="true" aria-label="关闭">×</button>
+        </div>
+        <div class="history-path-modal__body">
+          <p class="history-path-modal__note">${safeNote}</p>
+          <pre class="history-path-modal__code"><code id="history-path-value">${safePath}</code></pre>
+        </div>
+        <div class="history-path-modal__actions">
+          <button type="button" class="btn btn--outline" data-history-path-copy="true">复制路径</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function getHistoryRouteState() {
+  const params = new URLSearchParams(window.location.search);
+  const jobId = String(params.get("job") || "").trim();
+  const tabRaw = String(params.get("tab") || "").trim();
+  const tab = ["overview", "params", "logs", "viewer"].includes(tabRaw) ? tabRaw : "overview";
+  const scene = String(params.get("scene") || "").trim();
+  return { jobId, tab, scene };
+}
+
+function updateHistoryRouteState({ jobId = "", tab = "overview", scene = undefined } = {}, { replace = false } = {}) {
+  const url = new URL(window.location.href);
+  url.searchParams.set("page", "history");
+
+  if (scene !== undefined) {
+    if (scene) url.searchParams.set("scene", scene);
+    else url.searchParams.delete("scene");
+  }
+
+  if (jobId) {
+    url.searchParams.set("job", jobId);
+    url.searchParams.set("tab", tab || "overview");
+  } else {
+    url.searchParams.delete("job");
+    url.searchParams.delete("tab");
+  }
+
+  const nextUrl = `${url.pathname}?${url.searchParams.toString()}`;
+  if (replace) {
+    window.history.replaceState({ focusgsHistory: true }, "", nextUrl);
+  } else {
+    window.history.pushState({ focusgsHistory: true }, "", nextUrl);
+  }
+}
+
+function buildHistoryV1Row(job, favorites = null) {
+  const { cls, label } = getStatusMeta(job.status || job.state);
+  const runName = escapeHtml(job.runName || job.sceneName || job.id);
+  const sceneName = escapeHtml(job.sceneName || "—");
+  const updatedAt = formatDate(job.updatedAt || job.createdAt);
+  const createdAt = formatDate(job.createdAt);
+  const modeLabel = escapeHtml(job.mode || "—");
+  const hasIter = Number(job.currentIteration) > 0;
+  const iterText = hasIter
+    ? `${Math.max(0, Math.round(Number(job.currentIteration) || 0))} / ${Math.max(0, Math.round(Number(job.totalIterations) || 0))} iter`
+    : "未开始迭代";
+  const stageText = escapeHtml(job.stage || job.message || "");
+  const pillClass = `status-pill--${escapeHtml(job.status || job.state || "queued")}`;
+  const fav = favorites && job?.id ? favorites[String(job.id)] : null;
+  const isFav = Boolean(fav);
+
+  return `
+    <div class="history-v1-row" role="button" tabindex="0" data-job-id="${escapeHtml(job.id)}">
+      <span class="status-dot ${cls}" aria-label="${label}"></span>
+      <div class="history-v1-row__main">
+        <div class="history-v1-row__top">
+          <div class="history-v1-row__title">
+            <strong class="history-v1-row__name">${runName}</strong>
+            <span class="history-v1-row__pill ${pillClass}">${label}</span>
+          </div>
+          <div class="history-v1-row__time" title="Updated">${updatedAt}</div>
+        </div>
+        <div class="history-v1-row__meta">
+          <span>${sceneName}</span>
+          <span class="history-v1-row__sep">·</span>
+          <span>${modeLabel}</span>
+          <span class="history-v1-row__sep">·</span>
+          <span>${escapeHtml(iterText)}</span>
+          ${stageText ? `<span class="history-v1-row__sep">·</span><span class="history-v1-row__stage">${stageText}</span>` : ""}
+        </div>
+        <div class="history-v1-row__sub">
+          <span>Created ${createdAt}</span>
+          ${job.duration ? `<span class="history-v1-row__sep">·</span><span>${escapeHtml(job.duration)}</span>` : ""}
+        </div>
+      </div>
+      <div class="history-v1-row__actions">
+        <button type="button" class="history-fav-toggle ${isFav ? "is-active" : ""}" data-fav-toggle="true" data-job-id="${escapeHtml(job.id)}" aria-label="${isFav ? "取消收藏" : "收藏"}" title="${isFav ? "已收藏" : "收藏"}">
+          <span aria-hidden="true">${isFav ? "★" : "☆"}</span>
+        </button>
+        <div class="history-v1-row__chevron" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function buildHistoryDrawerMarkup({ jobId, tab = "overview" } = {}) {
+  return `
+    <div class="history-drawer is-visible" id="history-drawer" aria-hidden="false">
+      <div class="history-drawer__backdrop" data-history-drawer-close="true"></div>
+      <div class="history-drawer__panel" role="dialog" aria-modal="true" aria-labelledby="history-drawer-title">
+        <div class="history-drawer__head">
+          <div class="history-drawer__heading">
+            <p class="history-drawer__eyebrow">JOB INSPECTOR</p>
+            <h3 id="history-drawer-title">加载中...</h3>
+            <div class="history-drawer__head-meta">
+              <span class="history-drawer__status status-pill--queued">—</span>
+              <span class="history-drawer__updated">—</span>
+            </div>
+          </div>
+          <div class="history-drawer__head-actions">
+            <a class="btn btn--xs btn--ghost" id="history-drawer-to-train" href="/?page=train">去训练页</a>
+            <a class="btn btn--xs btn--ghost" id="history-drawer-resume" href="#" style="display:none;">断点续训</a>
+            <button type="button" class="history-drawer__close" data-history-drawer-close="true" aria-label="关闭">×</button>
+          </div>
+        </div>
+
+        <div class="history-drawer__tabs" role="tablist" aria-label="Job tabs">
+          <button class="history-drawer__tab ${tab === "overview" ? "is-active" : ""}" type="button" role="tab" data-history-tab="overview">概览</button>
+          <button class="history-drawer__tab ${tab === "params" ? "is-active" : ""}" type="button" role="tab" data-history-tab="params">参数</button>
+          <button class="history-drawer__tab ${tab === "logs" ? "is-active" : ""}" type="button" role="tab" data-history-tab="logs">日志</button>
+          <button class="history-drawer__tab ${tab === "viewer" ? "is-active" : ""}" type="button" role="tab" data-history-tab="viewer">预览</button>
+        </div>
+
+        <div class="history-drawer__body">
+          <section class="history-drawer__tab-panel ${tab === "overview" ? "is-active" : ""}" data-history-tab-panel="overview"></section>
+          <section class="history-drawer__tab-panel ${tab === "params" ? "is-active" : ""}" data-history-tab-panel="params"></section>
+          <section class="history-drawer__tab-panel ${tab === "logs" ? "is-active" : ""}" data-history-tab-panel="logs"></section>
+          <section class="history-drawer__tab-panel ${tab === "viewer" ? "is-active" : ""}" data-history-tab-panel="viewer"></section>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function setupHistoryPageInteraction(scenes, defaultScene) {
+  const root = document.querySelector(".studio-layout--history");
+  if (!root || root.dataset.boundHistoryV1 === "true") return;
+  root.dataset.boundHistoryV1 = "true";
+
+  const searchEl = document.getElementById("history-search");
+  const sceneSelect = document.getElementById("history-scene-select");
+  const sortSelect = document.getElementById("history-sort-select");
+  const statusChips = document.getElementById("history-status-chips");
+  const countA = document.getElementById("history-v1-count");
+  const countB = document.getElementById("history-v1-count-2");
+  const listEl = document.getElementById("history-v1-list");
+  const favListEl = document.getElementById("history-fav-list");
+  const favCountEl = document.getElementById("history-fav-count");
+  const favEmptyEl = document.getElementById("history-fav-empty");
+  const favEditorEl = document.getElementById("history-fav-editor");
+  const favAliasEl = document.getElementById("history-fav-alias");
+  const favNoteEl = document.getElementById("history-fav-note");
+  const favSaveBtn = document.getElementById("history-fav-save");
+  const favRemoveBtn = document.getElementById("history-fav-remove");
+  const modalRoot = document.getElementById("history-modal-root");
+
+  const FAVORITES_STORAGE_KEY = "focusgs-history-favorites-v1";
+
+  const state = {
+    jobs: [],
+    activeStatus: "all",
+    search: "",
+    scene: "",
+    sort: "updated_desc",
+    drawerJobId: "",
+    drawerTab: "overview",
+    drawerJob: null,
+    drawerLogs: "",
+    viewer: null,
+    viewerJobId: "",
+    favorites: {},
+    favoriteOrder: [],
+    activeFavoriteJobId: "",
+  };
+
+  function loadFavorites() {
+    try {
+      const raw = localStorage.getItem(FAVORITES_STORAGE_KEY);
+      if (!raw) return { favorites: {}, order: [] };
+      const parsed = JSON.parse(raw);
+      const items = parsed && typeof parsed === "object" ? parsed.items : null;
+      const order = parsed && typeof parsed === "object" ? parsed.order : null;
+      if (!items || typeof items !== "object") return { favorites: {}, order: [] };
+      return {
+        favorites: items,
+        order: Array.isArray(order) ? order.map((id) => String(id)) : [],
+      };
+    } catch {
+      return { favorites: {}, order: [] };
+    }
+  }
+
+  function persistFavorites() {
+    try {
+      localStorage.setItem(
+        FAVORITES_STORAGE_KEY,
+        JSON.stringify({ v: 1, items: state.favorites, order: state.favoriteOrder }),
+      );
+    } catch {
+      // ignore
+    }
+  }
+
+  function ensureFavoriteOrder() {
+    const existing = new Set(Object.keys(state.favorites || {}).map((id) => String(id)));
+    const order = Array.isArray(state.favoriteOrder) ? state.favoriteOrder.map((id) => String(id)) : [];
+    const normalized = [];
+    order.forEach((id) => {
+      if (existing.has(id) && !normalized.includes(id)) normalized.push(id);
+    });
+    existing.forEach((id) => {
+      if (!normalized.includes(id)) normalized.push(id);
+    });
+    state.favoriteOrder = normalized;
+  }
+
+  function getJobById(jobId) {
+    const id = String(jobId || "");
+    return (Array.isArray(state.jobs) ? state.jobs : []).find((job) => String(job?.id || "") === id) || null;
+  }
+
+  function renderFavoriteEditor(jobId) {
+    const id = String(jobId || "");
+    state.activeFavoriteJobId = id;
+    const fav = state.favorites[id] || null;
+    if (!fav) {
+      if (favEditorEl) favEditorEl.style.display = "none";
+      if (favAliasEl) favAliasEl.value = "";
+      if (favNoteEl) favNoteEl.value = "";
+      return;
+    }
+    if (favEditorEl) favEditorEl.style.display = "";
+    if (favAliasEl) favAliasEl.value = String(fav.alias || "");
+    if (favNoteEl) favNoteEl.value = String(fav.note || "");
+  }
+
+  function buildFavoriteRow(job, favMeta, jobId, isActive) {
+    const title = escapeHtml(favMeta?.alias || job?.runName || job?.sceneName || jobId || "—");
+    const sub = escapeHtml(favMeta?.note || job?.sceneName || jobId || "");
+    return `
+      <button type="button" class="history-fav-item ${isActive ? "is-active" : ""}" data-fav-item="true" data-job-id="${escapeHtml(jobId)}">
+        <strong>${title}</strong>
+        <span>${sub}</span>
+      </button>
+    `;
+  }
+
+  function renderFavorites() {
+    if (!favListEl) return;
+    ensureFavoriteOrder();
+    const ids = state.favoriteOrder.filter((id) => Boolean(state.favorites[id]));
+    if (favCountEl) favCountEl.textContent = String(ids.length);
+    if (favEmptyEl) favEmptyEl.style.display = ids.length ? "none" : "";
+    if (!ids.length) {
+      favListEl.innerHTML = "";
+      if (favEditorEl) favEditorEl.style.display = "none";
+      return;
+    }
+
+    const rows = ids.map((id) => {
+      const job = getJobById(id);
+      return buildFavoriteRow(job, state.favorites[id], id, id === state.activeFavoriteJobId);
+    }).join("");
+    favListEl.innerHTML = rows;
+
+    // If current active favorite disappears, reset editor.
+    if (state.activeFavoriteJobId && !state.favorites[state.activeFavoriteJobId]) {
+      state.activeFavoriteJobId = "";
+      renderFavoriteEditor("");
+    }
+  }
+
+  function setCounts(filteredCount, totalCount) {
+    const text = Number.isFinite(filteredCount) && Number.isFinite(totalCount)
+      ? `${filteredCount} / ${totalCount}`
+      : "—";
+    if (countA) countA.textContent = text;
+    if (countB) countB.textContent = text;
+  }
+
+  function normalizeStatusFilter(key) {
+    if (key === "running") return ["running", "queued", "cancelling"];
+    if (key === "success") return ["success"];
+    if (key === "failed") return ["failed"];
+    if (key === "cancelled") return ["cancelled"];
+    return null;
+  }
+
+  function getFilteredJobs() {
+    let jobs = Array.isArray(state.jobs) ? [...state.jobs] : [];
+
+    if (state.scene) {
+      jobs = jobs.filter((job) => String(job.sceneName || "").toLowerCase() === String(state.scene).toLowerCase());
+    }
+
+    const statuses = normalizeStatusFilter(state.activeStatus);
+    if (statuses) {
+      jobs = jobs.filter((job) => statuses.includes(job.status || job.state));
+    }
+
+    const q = String(state.search || "").trim().toLowerCase();
+    if (q) {
+      jobs = jobs.filter((job) => {
+        const hay = [
+          job.runName,
+          job.sceneName,
+          job.id,
+          job.mode,
+          job.message,
+          job.stage,
+        ].filter(Boolean).join(" ").toLowerCase();
+        return hay.includes(q);
+      });
+    }
+
+    const sortKey = state.sort || "updated_desc";
+    const sortBy = (field) => (left, right) => new Date(right?.[field] || 0).getTime() - new Date(left?.[field] || 0).getTime();
+    if (sortKey === "created_desc") jobs.sort(sortBy("createdAt"));
+    else jobs.sort(sortBy("updatedAt"));
+
+    return jobs;
+  }
+
+  function renderList() {
+    if (!listEl) return;
+    const filtered = getFilteredJobs();
+    setCounts(filtered.length, state.jobs.length);
+    if (!filtered.length) {
+      listEl.innerHTML = `
+        <div class="history-v1-empty">
+          <div class="history-empty">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <span>暂无匹配的历史记录</span>
+          </div>
+        </div>
+      `;
+      return;
+    }
+    listEl.innerHTML = filtered.map((job) => buildHistoryV1Row(job, state.favorites)).join("");
+  }
+
+  async function fetchHistoryJobs(sceneFilter = "") {
+    const url = new URL("/api/train/history", window.location.origin);
+    if (sceneFilter) url.searchParams.set("scene", sceneFilter);
+    const response = await fetch(url.toString(), { cache: "no-store" });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok || !Array.isArray(payload.jobs)) {
+      throw new Error(payload.message || "读取历史记录失败。");
+    }
+    return payload.jobs;
+  }
+
+  async function fetchJob(jobId) {
+    const response = await fetch(`/api/train/${encodeURIComponent(jobId)}`, { cache: "no-store" });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok || !payload.job) {
+      throw new Error(payload.message || "读取任务详情失败。");
+    }
+    return payload.job;
+  }
+
+  async function fetchJobLogs(jobId) {
+    const response = await fetch(`/api/train/${encodeURIComponent(jobId)}/logs`, { cache: "no-store" });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.message || "读取日志失败。");
+    }
+    return payload.logs || "";
+  }
+
+  function closePathDialog() {
+    const existing = modalRoot?.querySelector("#history-path-modal");
+    if (existing) existing.remove();
+  }
+
+  async function copyHistoryPath(pathValue) {
+    if (!pathValue) return false;
+    try {
+      await navigator.clipboard.writeText(pathValue);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function openHistoryPathDialog({ title, pathValue, note }) {
+    if (!modalRoot) return;
+    closePathDialog();
+    modalRoot.insertAdjacentHTML("beforeend", buildHistoryPathDialog({ title, path: pathValue, note }));
+  }
+
+  function disposeDrawerViewer() {
+    if (state.viewer) {
+      try { state.viewer.stop?.(); } catch { /* noop */ }
+      try { state.viewer.dispose?.(); } catch { /* noop */ }
+      state.viewer = null;
+      state.viewerJobId = "";
+    }
+    const holder = modalRoot?.querySelector("#history-drawer-viewer-holder");
+    if (holder) holder.innerHTML = "";
+  }
+
+  function closeDrawer({ replace = false } = {}) {
+    disposeDrawerViewer();
+    state.drawerJobId = "";
+    state.drawerJob = null;
+    state.drawerLogs = "";
+    if (modalRoot) modalRoot.innerHTML = "";
+    updateHistoryRouteState({ jobId: "", tab: "overview", scene: state.scene }, { replace });
+  }
+
+  function setActiveDrawerTab(tabKey, { pushRoute = true } = {}) {
+    const drawer = modalRoot?.querySelector("#history-drawer");
+    if (!drawer) return;
+    const tab = ["overview", "params", "logs", "viewer"].includes(tabKey) ? tabKey : "overview";
+    state.drawerTab = tab;
+    drawer.querySelectorAll("[data-history-tab]").forEach((el) => {
+      el.classList.toggle("is-active", el.getAttribute("data-history-tab") === tab);
+    });
+    drawer.querySelectorAll("[data-history-tab-panel]").forEach((el) => {
+      el.classList.toggle("is-active", el.getAttribute("data-history-tab-panel") === tab);
+    });
+    if (pushRoute && state.drawerJobId) {
+      updateHistoryRouteState({ jobId: state.drawerJobId, tab, scene: state.scene });
+    }
+  }
+
+  function renderDrawerContent(job, logs) {
+    const drawer = modalRoot?.querySelector("#history-drawer");
+    if (!drawer) return;
+
+    const titleEl = drawer.querySelector("#history-drawer-title");
+    const statusEl = drawer.querySelector(".history-drawer__status");
+    const updatedEl = drawer.querySelector(".history-drawer__updated");
+    const toTrainLink = drawer.querySelector("#history-drawer-to-train");
+    const resumeLink = drawer.querySelector("#history-drawer-resume");
+
+    const { label } = getStatusMeta(job.state);
+    if (titleEl) titleEl.textContent = job.sceneName || job.id;
+    if (statusEl) {
+      statusEl.className = `history-drawer__status status-pill--${job.state || "queued"}`;
+      statusEl.textContent = label;
+    }
+    if (updatedEl) updatedEl.textContent = `Updated ${formatDate(job.updatedAt || job.createdAt)}`;
+
+    const sceneId =
+      (Array.isArray(scenes) ? scenes : []).find((item) => String(item.id).toLowerCase() === String(job.sceneName || "").toLowerCase())?.id
+      || state.scene
+      || defaultScene?.id
+      || "garden";
+
+    if (toTrainLink) {
+      toTrainLink.href = `/?page=train&scene=${encodeURIComponent(sceneId)}`;
+    }
+
+    const canResume = Boolean(job.hasCheckpoint) && ["success", "failed", "cancelled"].includes(job.state);
+    if (resumeLink) {
+      if (canResume) {
+        resumeLink.style.display = "";
+        resumeLink.href = `/?page=train&scene=${encodeURIComponent(sceneId)}&resume=${encodeURIComponent(job.id)}`;
+      } else {
+        resumeLink.style.display = "none";
+        resumeLink.href = "#";
+      }
+    }
+
+    const overviewPanel = drawer.querySelector('[data-history-tab-panel="overview"]');
+    const paramsPanel = drawer.querySelector('[data-history-tab-panel="params"]');
+    const logsPanel = drawer.querySelector('[data-history-tab-panel="logs"]');
+    const viewerPanel = drawer.querySelector('[data-history-tab-panel="viewer"]');
+
+    const tp = job.trainingProgress || {};
+    if (overviewPanel) {
+      overviewPanel.innerHTML = `
+        <div class="history-drawer__grid">
+          <div class="history-drawer__kv">
+            <span>阶段</span>
+            <strong>${escapeHtml(tp.phase || job.stage || "—")}</strong>
+          </div>
+          <div class="history-drawer__kv">
+            <span>消息</span>
+            <strong>${escapeHtml(tp.detail || job.message || "—")}</strong>
+          </div>
+          <div class="history-drawer__kv">
+            <span>迭代</span>
+            <strong>${escapeHtml(tp.currentIteration != null ? `${tp.currentIteration} / ${tp.totalIterations || "—"}` : "—")}</strong>
+          </div>
+          <div class="history-drawer__kv">
+            <span>loss</span>
+            <strong>${tp.loss == null ? "—" : Number(tp.loss).toFixed(7)}</strong>
+          </div>
+          <div class="history-drawer__kv">
+            <span>speed</span>
+            <strong>${escapeHtml(tp.speed || "—")}</strong>
+          </div>
+          <div class="history-drawer__kv">
+            <span>eta</span>
+            <strong>${escapeHtml(tp.eta || "—")}</strong>
+          </div>
+          <div class="history-drawer__kv history-drawer__kv--wide">
+            <span>路径</span>
+            <div class="history-drawer__paths">
+              <div><em>workspace</em><code>${escapeHtml(job.workspacePath || "—")}</code></div>
+              <div><em>output</em><code>${escapeHtml(job.modelPath || "—")}</code></div>
+              <div><em>log</em><code>${escapeHtml(job.logPath || "—")}</code></div>
+            </div>
+            ${createHistoryPathActions(job)}
+          </div>
+        </div>
+      `;
+    }
+
+    if (paramsPanel) {
+      paramsPanel.innerHTML = `
+        <div class="history-drawer__code">
+          <pre class="code-log"><code id="history-drawer-params-code"></code></pre>
+        </div>
+      `;
+      const codeEl = paramsPanel.querySelector("#history-drawer-params-code");
+      if (codeEl) {
+        const payload = {
+          mode: job.mode,
+          sceneName: job.sceneName,
+          sourceStrategy: job.sourceStrategy,
+          sourcePath: job.sourcePath,
+          inputImageDir: job.inputImageDir,
+          sparseRoot: job.sparseRoot,
+          parameterValues: job.parameterValues || {},
+          resumeFromIteration: job.resumeFromIteration || null,
+          parentJobId: job.parentJobId || null,
+        };
+        codeEl.textContent = JSON.stringify(payload, null, 2);
+      }
+    }
+
+    if (logsPanel) {
+      logsPanel.innerHTML = `
+        <div class="history-drawer__code">
+          <pre class="code-log history-drawer__log-code"><code id="history-drawer-logs-code"></code></pre>
+        </div>
+      `;
+      const codeEl = logsPanel.querySelector("#history-drawer-logs-code");
+      if (codeEl) {
+        codeEl.textContent = logs || "暂无日志";
+      }
+    }
+
+    if (viewerPanel) {
+      viewerPanel.innerHTML = `
+        <div class="history-drawer__viewer-shell">
+          <div class="history-drawer__viewer-head">
+            <h4>Viewer 预览</h4>
+            <div class="history-drawer__viewer-sub">${job.preview?.iteration ? `iteration ${job.preview.iteration}` : "未生成 point_cloud"}</div>
+          </div>
+          <div class="history-drawer__viewer-body">
+            <div id="history-drawer-viewer-holder" class="history-drawer__viewer-holder"></div>
+            <div class="history-drawer__viewer-empty" id="history-drawer-viewer-empty" style="display:none;">
+              未找到可预览的 point_cloud.ply。请确认训练已产出 point_cloud/iteration_x/point_cloud.ply。
+            </div>
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  async function ensureViewerLoaded(job) {
+    if (!modalRoot) return;
+    const holder = modalRoot.querySelector("#history-drawer-viewer-holder");
+    const emptyEl = modalRoot.querySelector("#history-drawer-viewer-empty");
+    if (!holder) return;
+
+    if (!job?.preview?.url) {
+      if (emptyEl) emptyEl.style.display = "block";
+      holder.innerHTML = "";
+      disposeDrawerViewer();
+      return;
+    }
+
+    if (emptyEl) emptyEl.style.display = "none";
+
+    if (state.viewer && state.viewerJobId === job.id) return;
+    disposeDrawerViewer();
+
+    const viewport = document.createElement("div");
+    viewport.className = "history-drawer__viewer-viewport";
+    holder.appendChild(viewport);
+
+    const viewer = createViewer(viewport);
+    state.viewer = viewer;
+    state.viewerJobId = job.id;
+
+    try {
+      await viewer.addSplatScene(job.preview.url, {
+        format: GaussianSplats3D.SceneFormat.Ply,
+        splatAlphaRemovalThreshold: 5,
+        showLoadingUI: true,
+      });
+      viewer.start?.();
+    } catch (error) {
+      disposeDrawerViewer();
+      holder.innerHTML = "";
+      if (emptyEl) {
+        emptyEl.style.display = "block";
+        emptyEl.textContent = error instanceof Error ? error.message : "加载预览失败。";
+      }
+    }
+  }
+
+  function scrollLogsToBottom() {
+    const logsPanel = modalRoot?.querySelector('[data-history-tab-panel="logs"]');
+    const logCode = modalRoot?.querySelector(".history-drawer__log-code");
+    if (!logsPanel || !logCode) return;
+    window.requestAnimationFrame(() => {
+      const target = logCode;
+      target.scrollTop = target.scrollHeight;
+      logsPanel.scrollTop = 0;
+    });
+  }
+
+  async function openDrawer(jobId, tab = "overview", { replace = false } = {}) {
+    if (!modalRoot) return;
+    if (!jobId) return;
+
+    if (state.drawerJobId && state.drawerJobId !== jobId) {
+      disposeDrawerViewer();
+    }
+
+    state.drawerJobId = jobId;
+    state.drawerTab = ["overview", "params", "logs", "viewer"].includes(tab) ? tab : "overview";
+    modalRoot.innerHTML = buildHistoryDrawerMarkup({ jobId, tab: state.drawerTab });
+
+    updateHistoryRouteState({ jobId, tab: state.drawerTab, scene: state.scene }, { replace });
+
+    const drawer = modalRoot.querySelector("#history-drawer");
+    const backdropClose = (event) => {
+      if (event.target.closest("[data-history-drawer-close]")) {
+        closeDrawer();
+      }
+    };
+
+    drawer?.addEventListener("click", (event) => {
+      const tabButton = event.target.closest("[data-history-tab]");
+      if (tabButton) {
+        const nextTab = tabButton.getAttribute("data-history-tab") || "overview";
+        setActiveDrawerTab(nextTab);
+        if (nextTab === "viewer" && state.drawerJob) {
+          void ensureViewerLoaded(state.drawerJob);
+        } else {
+          // Reduce GPU pressure: if user leaves viewer tab, drop the viewer.
+          disposeDrawerViewer();
+        }
+        return;
+      }
+      backdropClose(event);
+    });
+
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") {
+        closeDrawer();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, { once: true });
+
+    try {
+      const [job, logs] = await Promise.all([fetchJob(jobId), fetchJobLogs(jobId)]);
+      state.drawerJob = job;
+      state.drawerLogs = logs || "";
+      renderDrawerContent(job, logs);
+      setActiveDrawerTab(state.drawerTab, { pushRoute: false });
+      if (state.drawerTab === "viewer") {
+        void ensureViewerLoaded(job);
+      } else if (state.drawerTab === "logs") {
+        scrollLogsToBottom();
+      }
+    } catch (error) {
+      const titleEl = modalRoot.querySelector("#history-drawer-title");
+      if (titleEl) titleEl.textContent = "加载失败";
+      const panel = modalRoot.querySelector('[data-history-tab-panel="overview"]');
+      if (panel) {
+        panel.innerHTML = `<div class=\"history-drawer__error\">${escapeHtml(error instanceof Error ? error.message : "读取任务失败。")}</div>`;
+      }
+    }
+  }
+
+  // Filters
+  searchEl?.addEventListener("input", () => {
+    state.search = searchEl.value || "";
+    renderList();
+  });
+
+  sceneSelect?.addEventListener("change", async () => {
+    state.scene = String(sceneSelect.value || "");
+    updateHistoryRouteState({ jobId: state.drawerJobId, tab: state.drawerTab, scene: state.scene }, { replace: true });
+    try {
+      state.jobs = await fetchHistoryJobs(state.scene);
+    } catch (error) {
+      state.jobs = [];
+      if (listEl) {
+        listEl.innerHTML = `<div class=\"history-v1-error\">${escapeHtml(error instanceof Error ? error.message : "读取历史记录失败。")}</div>`;
+      }
+    }
+    renderList();
+  });
+
+  sortSelect?.addEventListener("change", () => {
+    state.sort = String(sortSelect.value || "updated_desc");
+    renderList();
+  });
+
+  statusChips?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-status]");
+    if (!button) return;
+    const key = button.getAttribute("data-status") || "all";
+    state.activeStatus = key;
+    statusChips.querySelectorAll(".segment").forEach((el) => el.classList.toggle("active", el === button));
+    renderList();
+  });
+
+  listEl?.addEventListener("click", (event) => {
+    const favToggle = event.target.closest("[data-fav-toggle]");
+    if (favToggle) {
+      event.preventDefault();
+      event.stopPropagation();
+      const jobId = String(favToggle.getAttribute("data-job-id") || "");
+      const id = String(jobId || "").trim();
+      if (!id) return;
+      if (state.favorites[id]) {
+        delete state.favorites[id];
+        state.favoriteOrder = state.favoriteOrder.filter((x) => String(x) !== id);
+        if (state.activeFavoriteJobId === id) state.activeFavoriteJobId = "";
+      } else {
+        state.favorites[id] = {
+          alias: "",
+          note: "",
+          createdAt: new Date().toISOString(),
+        };
+        state.favoriteOrder = [id, ...state.favoriteOrder.filter((x) => String(x) !== id)];
+        state.activeFavoriteJobId = id;
+      }
+      persistFavorites();
+      renderList();
+      renderFavorites();
+      renderFavoriteEditor(state.activeFavoriteJobId);
+      return;
+    }
+    const row = event.target.closest(".history-v1-row");
+    if (!row) return;
+    const jobId = row.getAttribute("data-job-id") || "";
+    void openDrawer(jobId, "overview");
+  });
+  listEl?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const row = event.target.closest(".history-v1-row");
+    if (!row) return;
+    event.preventDefault();
+    const jobId = row.getAttribute("data-job-id") || "";
+    void openDrawer(jobId, "overview");
+  });
+
+  modalRoot?.addEventListener("click", (event) => {
+    const closeTarget = event.target.closest("[data-history-drawer-close]");
+    if (!closeTarget) return;
+    closeDrawer();
+  });
+
+  modalRoot?.addEventListener("click", async (event) => {
+    const pathButton = event.target.closest("[data-history-path-target]");
+    if (pathButton) {
+      const pathValue = String(pathButton.dataset.path || "").trim();
+      const target = String(pathButton.dataset.historyPathTarget || "path");
+      const titleMap = {
+        output: "结果目录",
+        log: "日志目录",
+        preview: "预览文件",
+        workspace: "数据目录",
+      };
+      openHistoryPathDialog({
+        title: titleMap[target] || "路径详情",
+        pathValue,
+        note: "复制路径后，可以在本地文件管理器里打开。",
+      });
+      return;
+    }
+
+    const pathClose = event.target.closest("[data-history-path-close]");
+    if (pathClose) {
+      closePathDialog();
+      return;
+    }
+
+    const pathCopy = event.target.closest("[data-history-path-copy]");
+    if (pathCopy) {
+      const codeEl = modalRoot.querySelector("#history-path-value");
+      const copied = await copyHistoryPath(codeEl?.textContent || "");
+      window.alert(copied ? "路径已复制到剪贴板。" : "复制失败，请手动复制。");
+      return;
+    }
+  });
+
+  favListEl?.addEventListener("click", (event) => {
+    const item = event.target.closest("[data-fav-item]");
+    if (!item) return;
+    const jobId = String(item.getAttribute("data-job-id") || "");
+    if (!jobId) return;
+    state.activeFavoriteJobId = jobId;
+    renderFavorites();
+    renderFavoriteEditor(jobId);
+    void openDrawer(jobId, "overview");
+  });
+
+  favSaveBtn?.addEventListener("click", () => {
+    const id = String(state.activeFavoriteJobId || "");
+    if (!id || !state.favorites[id]) return;
+    state.favorites[id] = {
+      ...state.favorites[id],
+      alias: String(favAliasEl?.value || "").trim(),
+      note: String(favNoteEl?.value || "").trim(),
+      updatedAt: new Date().toISOString(),
+    };
+    persistFavorites();
+    renderFavorites();
+    renderList();
+  });
+
+  favRemoveBtn?.addEventListener("click", () => {
+    const id = String(state.activeFavoriteJobId || "");
+    if (!id || !state.favorites[id]) return;
+    delete state.favorites[id];
+    state.favoriteOrder = state.favoriteOrder.filter((x) => String(x) !== id);
+    state.activeFavoriteJobId = "";
+    persistFavorites();
+    renderFavorites();
+    renderFavoriteEditor("");
+    renderList();
+  });
+
+  // Initial load from URL (scene/job/tab)
+  (async () => {
+    const route = getHistoryRouteState();
+    state.scene = route.scene || "";
+    state.drawerJobId = route.jobId || "";
+    state.drawerTab = route.tab || "overview";
+
+    if (sceneSelect) {
+      sceneSelect.value = state.scene;
+    }
+
+    const favLoaded = loadFavorites();
+    state.favorites = favLoaded.favorites || {};
+    state.favoriteOrder = favLoaded.order || [];
+
+    try {
+      state.jobs = await fetchHistoryJobs(state.scene);
+    } catch (error) {
+      state.jobs = [];
+      if (listEl) {
+        listEl.innerHTML = `<div class=\"history-v1-error\">${escapeHtml(error instanceof Error ? error.message : "读取历史记录失败。")}</div>`;
+      }
+    }
+
+    renderFavorites();
+    renderList();
+
+    if (route.jobId) {
+      void openDrawer(route.jobId, route.tab || "overview", { replace: true });
+    } else {
+      updateHistoryRouteState({ jobId: "", tab: "overview", scene: state.scene }, { replace: true });
+    }
+  })();
+
+  window.addEventListener("popstate", () => {
+    const route = getHistoryRouteState();
+    // If user navigates away from history page, we should cleanup.
+    const page = new URLSearchParams(window.location.search).get("page") || "";
+    if (page !== "history") {
+      disposeDrawerViewer();
+      state.drawerJobId = "";
+      state.drawerJob = null;
+      state.drawerLogs = "";
+      state.drawerTab = "overview";
+      if (modalRoot) modalRoot.innerHTML = "";
+      return;
+    }
+
+    if (sceneSelect && route.scene !== state.scene) {
+      state.scene = route.scene || "";
+      sceneSelect.value = state.scene;
+      void (async () => {
+        try {
+          state.jobs = await fetchHistoryJobs(state.scene);
+        } catch {
+          state.jobs = [];
+        }
+        renderList();
+      })();
+    }
+
+    if (!route.jobId) {
+      if (state.drawerJobId) {
+        // Popstate already moved the URL back; just sync UI without pushing/replacing history again.
+        disposeDrawerViewer();
+        state.drawerJobId = "";
+        state.drawerJob = null;
+        state.drawerLogs = "";
+        state.drawerTab = "overview";
+        if (modalRoot) modalRoot.innerHTML = "";
+      }
+      return;
+    }
+
+    // Drawer should be open; sync job/tab.
+    if (route.jobId !== state.drawerJobId) {
+      void openDrawer(route.jobId, route.tab || "overview", { replace: true });
+      return;
+    }
+
+    // Same job; just tab switch.
+    if (route.tab && route.tab !== state.drawerTab) {
+      setActiveDrawerTab(route.tab, { pushRoute: false });
+      if (route.tab === "viewer" && state.drawerJob) {
+        void ensureViewerLoaded(state.drawerJob);
+      } else if (route.tab === "logs") {
+        scrollLogsToBottom();
+      } else {
+        disposeDrawerViewer();
+      }
+    }
+  });
 }

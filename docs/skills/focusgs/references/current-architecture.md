@@ -106,7 +106,7 @@ The current practical flow is:
 2. Open `http://localhost:4173/`
 3. Frontend loads scene metadata and workspace UI
 4. Local API resolves dataset paths and launches `algorithms/MEGS-2/train.py`
-5. Runtime state is written under `.runtime/jobs/`
+5. Runtime state is written under `history/`
 6. Frontend polls task state, logs, previews, and history
 
 ## Current Mainline Rule

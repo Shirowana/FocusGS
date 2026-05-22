@@ -5,6 +5,7 @@ import { getHistoryByScene } from "./config/loadHistory.js";
 import { createViewer } from "./viewer/createViewer.js";
 import { loadSceneIntoViewer } from "./viewer/loadScene.js";
 import { loadEmbeddedViewer } from "./viewer/loadEmbeddedViewer.js";
+import * as GaussianSplats3D from "@mkkellogg/gaussian-splats-3d";
 
 const PAGE_TRANSITION_DURATION = 980;
 const PAGE_SWITCH_SLIDE_DURATION = 320;
@@ -61,6 +62,7 @@ window.focusGSStudioLoadPreview = async function (previewUrl, iteration = "") {
     }
 
     const nextSceneIndex = await viewer.addSplatScene(previewUrl, {
+      format: GaussianSplats3D.SceneFormat.Ply,
       splatAlphaRemovalThreshold: 5,
       showLoadingUI: true,
       progressiveLoad: true,
