@@ -44,6 +44,68 @@ const MAX_HISTORY_JOBS = 30;
 
 const jobStore = new Map();
 
+function rewritePlyHeaderForGaussianSplats(headerText = "") {
+  // GaussianSplats3D expects 3DGS-style color fields like `f_dc_0/1/2` (or RGB bytes).
+  // MEGS-2 exports `rgb_base_0/1/2` which are compatible with the DC coefficient mapping,
+  // but the loader will ignore them unless we alias to `f_dc_*`.
+  const hasRgbBase = /(^|\n)\s*property\s+\w+\s+rgb_base_0\b/i.test(headerText);
+  const hasFdc = /(^|\n)\s*property\s+\w+\s+f_dc_0\b/i.test(headerText);
+  if (!hasRgbBase || hasFdc) {
+    return { headerText, rewritten: false };
+  }
+
+  const replaceProp = (text, from, to) =>
+    text.replace(new RegExp(`(^|\\n)(\\s*property\\s+\\w+\\s+)${from}\\b`, "gi"), `$1$2${to}`);
+
+  let next = headerText;
+  next = replaceProp(next, "rgb_base_0", "f_dc_0");
+  next = replaceProp(next, "rgb_base_1", "f_dc_1");
+  next = replaceProp(next, "rgb_base_2", "f_dc_2");
+
+  return { headerText: next, rewritten: next !== headerText };
+}
+
+async function readPlyHeaderSlice(filePath, maxBytes = 512 * 1024) {
+  // Read only the header to locate `end_header` without loading the full PLY into memory.
+  const fd = await fs.open(filePath, "r");
+  try {
+    const buf = Buffer.allocUnsafe(Math.min(maxBytes, 64 * 1024));
+    let offset = 0;
+    let acc = Buffer.alloc(0);
+    while (offset < maxBytes) {
+      const readSize = Math.min(buf.length, maxBytes - offset);
+      const { bytesRead } = await fd.read(buf, 0, readSize, offset);
+      if (!bytesRead) break;
+      offset += bytesRead;
+      acc = Buffer.concat([acc, buf.subarray(0, bytesRead)]);
+
+      const idxLf = acc.indexOf(Buffer.from("end_header\n"));
+      const idxCrLf = acc.indexOf(Buffer.from("end_header\r\n"));
+      let headerEnd = -1;
+      let tokenLen = 0;
+      if (idxCrLf >= 0 && (idxLf < 0 || idxCrLf < idxLf)) {
+        headerEnd = idxCrLf;
+        tokenLen = "end_header\r\n".length;
+      } else if (idxLf >= 0) {
+        headerEnd = idxLf;
+        tokenLen = "end_header\n".length;
+      }
+
+      if (headerEnd >= 0) {
+        const headerBytes = acc.subarray(0, headerEnd + tokenLen);
+        return {
+          headerBytes,
+          headerText: headerBytes.toString("utf8"),
+          dataStart: headerEnd + tokenLen,
+        };
+      }
+    }
+    throw new Error("PLY header too large or missing end_header token");
+  } finally {
+    await fd.close();
+  }
+}
+
 async function getLatestPreviewInfo(job) {
   const pointCloudRoot = path.join(job.modelPath, "point_cloud");
 
@@ -334,7 +396,10 @@ function toPublicJob(job) {
   return {
     id: job.id,
     mode: job.mode,
+    runName: job.runName || null,
     sceneName: job.sceneName,
+    origin: job.origin || "trained",
+    tags: Array.isArray(job.tags) ? job.tags : [],
     state: job.state,
     stage: job.stage,
     message: job.message,
@@ -826,7 +891,10 @@ async function persistJobArtifacts(job) {
   await fs.writeFile(path.join(job.rootPath, "job.json"), JSON.stringify({
     id: job.id,
     mode: job.mode,
+    runName: job.runName || null,
     sceneName: job.sceneName,
+    origin: job.origin || "trained",
+    tags: Array.isArray(job.tags) ? job.tags : [],
     selectionSummary: job.selectionSummary,
     launcher: job.launcher,
     parameterValues: job.parameterValues,
@@ -918,7 +986,10 @@ async function loadStoredJob(jobId) {
     const loadedJob = {
       id: persisted.id || status.id || jobId,
       mode: persisted.mode || status.mode || "colmap",
+      runName: persisted.runName || status.runName || null,
       sceneName: persisted.sceneName || status.sceneName || "unnamed-scene",
+      origin: persisted.origin || status.origin || "trained",
+      tags: persisted.tags || status.tags || [],
       selectionSummary: persisted.selectionSummary || status.selectionSummary || "",
       launcher: persisted.launcher || status.launcher || "",
       parameterValues: persisted.parameterValues || status.parameterValues || {},
@@ -1040,9 +1111,11 @@ async function listHistoricalJobs(sceneName = "") {
     const canResume = ["success", "failed", "cancelled"].includes(loaded.state) && loaded.hasCheckpoint;
     results.push({
       id: loaded.id,
-      runName: loaded.parentJobId ? `${loaded.sceneName}-resume` : loaded.sceneName,
+      runName: loaded.runName || (loaded.parentJobId ? `${loaded.sceneName}-resume` : loaded.sceneName),
       sceneName: loaded.sceneName,
       mode: loaded.mode,
+      origin: loaded.origin || "trained",
+      tags: Array.isArray(loaded.tags) ? loaded.tags : [],
       state: loaded.state,
       status: loaded.state,
       stage: loaded.stage,
@@ -1712,6 +1785,19 @@ async function handleGetTrainingPreview(jobId, req, res) {
   res.statusCode = 200;
   res.setHeader("Content-Type", "application/octet-stream");
   res.setHeader("Cache-Control", "no-store");
+  // Compatibility layer: MEGS-2 exports `rgb_base_*` but GaussianSplats3D expects `f_dc_*`.
+  // Rewrite only the header field names and stream the original binary payload.
+  try {
+    const { headerText, dataStart } = await readPlyHeaderSlice(filePath);
+    const rewritten = rewritePlyHeaderForGaussianSplats(headerText);
+    if (rewritten.rewritten) {
+      res.write(Buffer.from(rewritten.headerText, "utf8"));
+      fsSync.createReadStream(filePath, { start: dataStart }).pipe(res);
+      return;
+    }
+  } catch {
+    // If header parsing fails, fall back to raw streaming to avoid breaking preview.
+  }
   fsSync.createReadStream(filePath).pipe(res);
 }
 
@@ -1721,6 +1807,121 @@ async function handleListTrainingHistory(req, res) {
   await pruneOldJobs();
   const jobs = await listHistoricalJobs(sceneName);
   json(res, 200, { ok: true, jobs });
+}
+
+async function handleImportTraining(req, res) {
+  try {
+    const formData = await parseMultipartFormData(req);
+    const job = await createImportJob(formData);
+    json(res, 200, { ok: true, job: toPublicJob(job) });
+  } catch (error) {
+    json(res, 400, {
+      ok: false,
+      message: error instanceof Error ? error.message : "Failed to import job",
+    });
+  }
+}
+
+async function createImportJob(formData) {
+  const payload = JSON.parse(String(formData.get("payload") || "{}"));
+
+  const sceneName = String(payload.sceneName || "").trim();
+  const runName = String(payload.runName || "").trim();
+  const note = String(payload.note || "").trim();
+  const tagsRaw = payload.tags;
+  const tags = Array.isArray(tagsRaw)
+    ? tagsRaw.map((x) => String(x).trim()).filter(Boolean)
+    : String(tagsRaw || "")
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean);
+
+  if (!sceneName) throw new Error("缺少场景名 sceneName。");
+  if (!runName) throw new Error("缺少名称 runName。");
+  if (sceneName.length > 80) throw new Error("sceneName 过长（<= 80）。");
+  if (runName.length > 80) throw new Error("runName 过长（<= 80）。");
+
+  const iterRaw = payload.iteration;
+  let iteration = Number.isFinite(Number(iterRaw)) ? Number(iterRaw) : 1;
+  iteration = Math.floor(iteration);
+  // Preview endpoint rejects <=0; keep a stable minimum.
+  if (!Number.isFinite(iteration) || iteration < 1) iteration = 1;
+
+  const ply = formData.get("ply");
+  if (!ply || typeof ply.arrayBuffer !== "function") {
+    throw new Error("缺少 PLY 文件。");
+  }
+  const plyName = String(ply.name || "").toLowerCase();
+  if (!plyName.endsWith(".ply")) {
+    throw new Error("PLY 文件格式无效（仅支持 .ply）。");
+  }
+
+  const jobId = createFriendlyJobId({ sceneName, mode: "import", inputImageDir: "ply" });
+  const rootPath = path.join(JOBS_ROOT, jobId);
+  const modelPath = path.join(rootPath, "output");
+  const logPath = path.join(rootPath, "logs", "train.log");
+  await ensureJobScaffold(rootPath);
+
+  const destDir = path.join(modelPath, "point_cloud", `iteration_${iteration}`);
+  await fs.mkdir(destDir, { recursive: true });
+  const buffer = Buffer.from(await ply.arrayBuffer());
+  await fs.writeFile(path.join(destDir, "point_cloud.ply"), buffer);
+
+  const createdAt = new Date().toISOString();
+  const job = {
+    id: jobId,
+    mode: "import",
+    runName,
+    sceneName,
+    origin: "imported",
+    tags: Array.from(new Set(["imported", ...tags])),
+    selectionSummary: "自定义导入：PLY",
+    parameterValues: { iterations: iteration },
+    inputImageDir: "images",
+    sparseRoot: "sparse/0",
+    impMetric: getSceneImpMetric([]),
+    rootPath,
+    workspacePath: path.join(rootPath, "workspace"),
+    sourcePath: path.join(rootPath, "workspace"),
+    sourceStrategy: "upload-copy",
+    modelPath,
+    logPath,
+    createdAt,
+    updatedAt: createdAt,
+    state: "success",
+    stage: "imported",
+    message: note || "自定义导入",
+    timeline: ["自定义导入", "就绪"],
+    process: null,
+    launcher: "import",
+    exitCode: 0,
+    error: null,
+    logTail: [],
+    trainingProgress: {
+      phase: "自定义导入",
+      percent: 100,
+      currentIteration: iteration,
+      totalIterations: iteration,
+      loss: null,
+      eta: null,
+      speed: null,
+      detail: note || "已导入 PLY，可直接预览",
+      updatedAt: createdAt,
+    },
+    outputBuffer: "",
+  };
+
+  // Minimal log file for "logs" tab.
+  try {
+    await fs.writeFile(logPath, `Imported PLY: ${ply.name}\nScene: ${sceneName}\n`, "utf8");
+  } catch {
+    // ignore
+  }
+
+  jobStore.set(jobId, job);
+  await persistJobArtifacts(job);
+  await pruneOldJobs();
+  return job;
 }
 
 async function handleResumeTraining(req, res) {
@@ -1769,6 +1970,11 @@ export function createLocalApiMiddleware() {
 
     if (url.pathname === "/api/train/create" && req.method === "POST") {
       await handleCreateTraining(req, res);
+      return;
+    }
+
+    if (url.pathname === "/api/train/import" && req.method === "POST") {
+      await handleImportTraining(req, res);
       return;
     }
 

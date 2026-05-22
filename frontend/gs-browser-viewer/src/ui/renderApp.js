@@ -4532,7 +4532,10 @@ export function renderHistoryPage(scenes, selectedScene) {
                   <button class="segment" type="button" data-status="failed">Failed</button>
                   <button class="segment" type="button" data-status="cancelled">Cancelled</button>
                 </div>
-                <span class="history-count" id="history-v1-count">—</span>
+                <div class="history-filter__actions">
+                  <span class="history-count" id="history-v1-count">—</span>
+                  <button type="button" class="btn btn--ghost history-import-btn" id="history-import-btn">自定义导入</button>
+                </div>
               </div>
             </div>
 
@@ -4595,6 +4598,67 @@ function buildHistoryPathDialog({ title = "路径详情", path = "", note = "" }
         <div class="history-path-modal__actions">
           <button type="button" class="btn btn--outline" data-history-path-copy="true">复制路径</button>
         </div>
+      </div>
+    </div>
+  `;
+}
+
+function buildHistoryImportDialog({ sceneOptions = "", defaultScene = "", defaultRunName = "" } = {}) {
+  return `
+    <div class="history-import-modal is-visible" id="history-import-modal" aria-hidden="false">
+      <div class="history-import-modal__backdrop" data-history-import-close="true"></div>
+      <div class="history-import-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="history-import-title">
+        <div class="history-import-modal__head">
+          <div>
+            <p class="history-import-modal__eyebrow">CUSTOM IMPORT</p>
+            <h3 id="history-import-title">自定义导入</h3>
+          </div>
+          <button type="button" class="history-import-modal__close" data-history-import-close="true" aria-label="关闭">×</button>
+        </div>
+        <form class="history-import-modal__body" id="history-import-form">
+          <div class="history-import-modal__grid">
+            <div class="history-import-modal__field history-import-modal__field--wide">
+              <label for="history-import-run-name">名称</label>
+              <input id="history-import-run-name" class="input-field" type="text" maxlength="80" value="${escapeHtml(defaultRunName)}" placeholder="自定义导入名称" />
+            </div>
+            <div class="history-import-modal__field">
+              <label for="history-import-scene-select">场景</label>
+              <select id="history-import-scene-select" class="workspace-params-input">
+                ${sceneOptions}
+              </select>
+            </div>
+            <div class="history-import-modal__field">
+              <label for="history-import-new-scene">新场景名</label>
+              <input id="history-import-new-scene" class="input-field" type="text" maxlength="80" placeholder="可选，填写后覆盖上面的场景" />
+            </div>
+            <div class="history-import-modal__field">
+              <label for="history-import-iteration">迭代</label>
+              <input id="history-import-iteration" class="input-field" type="number" min="0" step="1" value="1" placeholder="1" />
+            </div>
+            <div class="history-import-modal__field history-import-modal__field--wide">
+              <label for="history-import-note">备注</label>
+              <textarea id="history-import-note" class="input-field" rows="3" placeholder="可写导入说明、模型来源、补充信息..."></textarea>
+            </div>
+            <div class="history-import-modal__field history-import-modal__field--wide">
+              <label for="history-import-tags">标签</label>
+              <input id="history-import-tags" class="input-field" type="text" placeholder="逗号分隔，例如 imported, demo" />
+            </div>
+            <div class="history-import-modal__field history-import-modal__field--wide">
+              <label for="history-import-ply">PLY 文件</label>
+              <div class="history-import-dropzone" id="history-import-dropzone" tabindex="0" role="button" aria-label="拖拽或点击导入 PLY 文件">
+                <div class="history-import-dropzone__title">拖拽 point_cloud.ply 到这里</div>
+                <div class="history-import-dropzone__meta" id="history-import-dropzone-meta">或点击选择文件（仅 .ply）</div>
+                <input id="history-import-ply" class="history-import-dropzone__input" type="file" accept=".ply" />
+              </div>
+            </div>
+          </div>
+          <div class="history-import-modal__hint">导入后的记录会直接出现在历史列表中；日志和参数暂时以黑色代码块占位。</div>
+          <div class="history-import-modal__error" id="history-import-error" style="display:none;"></div>
+          <div class="history-import-modal__actions">
+            <button type="button" class="btn btn--outline" data-history-import-close="true">取消</button>
+            <button type="submit" class="btn btn--primary" id="history-import-submit">导入</button>
+          </div>
+        </form>
       </div>
     </div>
   `;
@@ -4725,6 +4789,14 @@ function buildHistoryDrawerMarkup({ jobId, tab = "overview" } = {}) {
   `;
 }
 
+function buildHistoryPlaceholderCode(text) {
+  return `
+    <div class="history-drawer__code">
+      <pre class="code-log"><code>${escapeHtml(text)}</code></pre>
+    </div>
+  `;
+}
+
 function setupHistoryPageInteraction(scenes, defaultScene) {
   const root = document.querySelector(".studio-layout--history");
   if (!root || root.dataset.boundHistoryV1 === "true") return;
@@ -4748,6 +4820,7 @@ function setupHistoryPageInteraction(scenes, defaultScene) {
   const modalRoot = document.getElementById("history-modal-root");
 
   const FAVORITES_STORAGE_KEY = "focusgs-history-favorites-v1";
+  const HISTORY_IMPORT_STORAGE_KEY = "focusgs-history-import-new-scenes-v1";
 
   const state = {
     jobs: [],
@@ -4764,7 +4837,24 @@ function setupHistoryPageInteraction(scenes, defaultScene) {
     favorites: {},
     favoriteOrder: [],
     activeFavoriteJobId: "",
+    importDialogOpen: false,
   };
+
+  function getSceneOptionsFromJobs(jobs = []) {
+    const baseScenes = Array.isArray(scenes) ? scenes : [];
+    const seen = new Map();
+    for (const scene of baseScenes) {
+      if (scene?.id) seen.set(String(scene.id), scene);
+    }
+    for (const job of jobs) {
+      const sceneId = String(job?.sceneName || "").trim();
+      if (!sceneId) continue;
+      if (!seen.has(sceneId)) {
+        seen.set(sceneId, { id: sceneId, name: sceneId });
+      }
+    }
+    return Array.from(seen.values());
+  }
 
   function loadFavorites() {
     try {
@@ -4863,12 +4953,57 @@ function setupHistoryPageInteraction(scenes, defaultScene) {
     }
   }
 
+  function getHistoryImportSeenScenes() {
+    try {
+      const raw = localStorage.getItem(HISTORY_IMPORT_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return new Set(Array.isArray(parsed) ? parsed.map((x) => String(x)) : []);
+    } catch {
+      return new Set();
+    }
+  }
+
+  function markHistoryImportSeen(sceneName) {
+    const scene = String(sceneName || "").trim();
+    if (!scene) return;
+    try {
+      const set = getHistoryImportSeenScenes();
+      set.add(scene);
+      localStorage.setItem(HISTORY_IMPORT_STORAGE_KEY, JSON.stringify(Array.from(set)));
+    } catch {
+      // ignore
+    }
+  }
+
   function setCounts(filteredCount, totalCount) {
     const text = Number.isFinite(filteredCount) && Number.isFinite(totalCount)
       ? `${filteredCount} / ${totalCount}`
       : "—";
     if (countA) countA.textContent = text;
     if (countB) countB.textContent = text;
+  }
+
+  function getHistorySceneOptionsHtml() {
+    return getSceneOptionsFromJobs(state.jobs)
+      .map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name || item.id)}</option>`)
+      .join("");
+  }
+
+  function ensureSceneOptionsInSelect(selectEl) {
+    if (!selectEl) return;
+    const current = String(selectEl.value || "");
+    selectEl.innerHTML = getSceneOptionsFromJobs(state.jobs)
+      .map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name || item.id)}</option>`)
+      .join("");
+    if (current) selectEl.value = current;
+  }
+
+  function getDefaultImportRunName(sceneName = "") {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+    const scene = String(sceneName || "scene").trim() || "scene";
+    return `${scene}-import-${stamp}`;
   }
 
   function normalizeStatusFilter(key) {
@@ -4918,6 +5053,7 @@ function setupHistoryPageInteraction(scenes, defaultScene) {
     if (!listEl) return;
     const filtered = getFilteredJobs();
     setCounts(filtered.length, state.jobs.length);
+    refreshHistorySceneOptions();
     if (!filtered.length) {
       listEl.innerHTML = `
         <div class="history-v1-empty">
@@ -4941,6 +5077,18 @@ function setupHistoryPageInteraction(scenes, defaultScene) {
       throw new Error(payload.message || "读取历史记录失败。");
     }
     return payload.jobs;
+  }
+
+  async function importHistoryRecord(formData) {
+    const response = await fetch("/api/train/import", {
+      method: "POST",
+      body: formData,
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok || !payload.job) {
+      throw new Error(payload.message || "导入失败。");
+    }
+    return payload.job;
   }
 
   async function fetchJob(jobId) {
@@ -4982,6 +5130,117 @@ function setupHistoryPageInteraction(scenes, defaultScene) {
     modalRoot.insertAdjacentHTML("beforeend", buildHistoryPathDialog({ title, path: pathValue, note }));
   }
 
+  function closeImportDialog() {
+    const existing = modalRoot?.querySelector("#history-import-modal");
+    if (existing) existing.remove();
+    state.importFile = null;
+    state.importDialogOpen = false;
+  }
+
+  function formatFileBytes(bytes) {
+    const n = Number(bytes || 0);
+    if (!Number.isFinite(n) || n <= 0) return "—";
+    const mb = n / (1024 * 1024);
+    if (mb >= 1024) return `${(mb / 1024).toFixed(2)} GB`;
+    return `${mb.toFixed(2)} MB`;
+  }
+
+  function setImportDropzoneFile(file) {
+    state.importFile = file || null;
+    if (!modalRoot) return;
+    const metaEl = modalRoot.querySelector("#history-import-dropzone-meta");
+    const zone = modalRoot.querySelector("#history-import-dropzone");
+    if (!metaEl || !zone) return;
+    if (!file) {
+      metaEl.textContent = "或点击选择文件（仅 .ply）";
+      zone.classList.remove("has-file");
+      return;
+    }
+    metaEl.textContent = `${file.name} · ${formatFileBytes(file.size)}`;
+    zone.classList.add("has-file");
+  }
+
+  function wireImportDropzone() {
+    if (!modalRoot) return;
+    const zone = modalRoot.querySelector("#history-import-dropzone");
+    const input = modalRoot.querySelector("#history-import-ply");
+    if (!zone || !input) return;
+
+    const stop = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+
+    const isPly = (file) => {
+      const name = String(file?.name || "").toLowerCase();
+      return name.endsWith(".ply");
+    };
+
+    const pickFile = () => {
+      try { input.click(); } catch { /* noop */ }
+    };
+
+    zone.addEventListener("click", (event) => {
+      if (event.target && event.target.closest(".history-import-dropzone__input")) return;
+      pickFile();
+    });
+    zone.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      pickFile();
+    });
+
+    ["dragenter", "dragover"].forEach((type) => {
+      zone.addEventListener(type, (event) => {
+        stop(event);
+        zone.classList.add("is-dragover");
+      });
+    });
+    ["dragleave", "drop"].forEach((type) => {
+      zone.addEventListener(type, (event) => {
+        stop(event);
+        zone.classList.remove("is-dragover");
+      });
+    });
+
+    zone.addEventListener("drop", (event) => {
+      const file = event.dataTransfer?.files?.[0] || null;
+      if (!file) return;
+      if (!isPly(file)) {
+        const err = modalRoot.querySelector("#history-import-error");
+        if (err) {
+          err.style.display = "block";
+          err.textContent = "仅支持导入 .ply 文件。";
+        }
+        setImportDropzoneFile(null);
+        return;
+      }
+      setImportDropzoneFile(file);
+    });
+
+    input.addEventListener("change", () => {
+      const file = input.files?.[0] || null;
+      setImportDropzoneFile(file);
+    });
+  }
+
+  function openImportDialog() {
+    if (!modalRoot) return;
+    closeImportDialog();
+    const defaultScene = state.scene || state.jobs?.[0]?.sceneName || "";
+    const dialogSceneOptions = getSceneOptionsFromJobs(state.jobs)
+      .map((item) => `<option value="${escapeHtml(item.id)}"${String(item.id) === String(defaultScene) ? " selected" : ""}>${escapeHtml(item.name || item.id)}</option>`)
+      .join("");
+    const defaultRunName = getDefaultImportRunName(defaultScene);
+    modalRoot.insertAdjacentHTML("beforeend", buildHistoryImportDialog({
+      sceneOptions: dialogSceneOptions,
+      defaultScene,
+      defaultRunName,
+    }));
+    wireImportDropzone();
+    state.importDialogOpen = true;
+  }
+
   function disposeDrawerViewer() {
     if (state.viewer) {
       try { state.viewer.stop?.(); } catch { /* noop */ }
@@ -5000,6 +5259,10 @@ function setupHistoryPageInteraction(scenes, defaultScene) {
     state.drawerLogs = "";
     if (modalRoot) modalRoot.innerHTML = "";
     updateHistoryRouteState({ jobId: "", tab: "overview", scene: state.scene }, { replace });
+  }
+
+  function refreshHistorySceneOptions() {
+    ensureSceneOptionsInSelect(sceneSelect);
   }
 
   function setActiveDrawerTab(tabKey, { pushRoute = true } = {}) {
@@ -5063,9 +5326,14 @@ function setupHistoryPageInteraction(scenes, defaultScene) {
     const viewerPanel = drawer.querySelector('[data-history-tab-panel="viewer"]');
 
     const tp = job.trainingProgress || {};
+    const isImported = String(job.origin || "trained") === "imported";
     if (overviewPanel) {
       overviewPanel.innerHTML = `
         <div class="history-drawer__grid">
+          <div class="history-drawer__kv">
+            <span>名称</span>
+            <strong>${escapeHtml(job.runName || job.sceneName || job.id || "—")}</strong>
+          </div>
           <div class="history-drawer__kv">
             <span>阶段</span>
             <strong>${escapeHtml(tp.phase || job.stage || "—")}</strong>
@@ -5104,7 +5372,9 @@ function setupHistoryPageInteraction(scenes, defaultScene) {
     }
 
     if (paramsPanel) {
-      paramsPanel.innerHTML = `
+      paramsPanel.innerHTML = isImported
+        ? buildHistoryPlaceholderCode("(自定义导入记录：暂无训练超参数)")
+        : `
         <div class="history-drawer__code">
           <pre class="code-log"><code id="history-drawer-params-code"></code></pre>
         </div>
@@ -5127,7 +5397,9 @@ function setupHistoryPageInteraction(scenes, defaultScene) {
     }
 
     if (logsPanel) {
-      logsPanel.innerHTML = `
+      logsPanel.innerHTML = isImported
+        ? buildHistoryPlaceholderCode("(自定义导入记录：暂无训练日志)")
+        : `
         <div class="history-drawer__code">
           <pre class="code-log history-drawer__log-code"><code id="history-drawer-logs-code"></code></pre>
         </div>
@@ -5309,6 +5581,11 @@ function setupHistoryPageInteraction(scenes, defaultScene) {
     renderList();
   });
 
+  const importBtn = document.getElementById("history-import-btn");
+  importBtn?.addEventListener("click", () => {
+    openImportDialog();
+  });
+
   listEl?.addEventListener("click", (event) => {
     const favToggle = event.target.closest("[data-fav-toggle]");
     if (favToggle) {
@@ -5357,6 +5634,18 @@ function setupHistoryPageInteraction(scenes, defaultScene) {
   });
 
   modalRoot?.addEventListener("click", async (event) => {
+    const importClose = event.target.closest("[data-history-import-close]");
+    if (importClose) {
+      closeImportDialog();
+      return;
+    }
+
+    const importSubmit = event.target.closest("#history-import-submit");
+    if (importSubmit) {
+      // handled via form submit
+      return;
+    }
+
     const pathButton = event.target.closest("[data-history-path-target]");
     if (pathButton) {
       const pathValue = String(pathButton.dataset.path || "").trim();
@@ -5387,6 +5676,85 @@ function setupHistoryPageInteraction(scenes, defaultScene) {
       const copied = await copyHistoryPath(codeEl?.textContent || "");
       window.alert(copied ? "路径已复制到剪贴板。" : "复制失败，请手动复制。");
       return;
+    }
+  });
+
+  modalRoot?.addEventListener("submit", async (event) => {
+    const form = event.target.closest("#history-import-form");
+    if (!form) return;
+    event.preventDefault();
+
+    const errorEl = modalRoot.querySelector("#history-import-error");
+    const submitBtn = modalRoot.querySelector("#history-import-submit");
+    if (errorEl) {
+      errorEl.style.display = "none";
+      errorEl.textContent = "";
+    }
+
+    const runNameEl = modalRoot.querySelector("#history-import-run-name");
+    const sceneSelectEl = modalRoot.querySelector("#history-import-scene-select");
+    const newSceneEl = modalRoot.querySelector("#history-import-new-scene");
+    const iterationEl = modalRoot.querySelector("#history-import-iteration");
+    const noteEl = modalRoot.querySelector("#history-import-note");
+    const tagsEl = modalRoot.querySelector("#history-import-tags");
+    const plyEl = modalRoot.querySelector("#history-import-ply");
+
+    const sceneName = String(newSceneEl?.value || sceneSelectEl?.value || "").trim();
+    const runName = String(runNameEl?.value || "").trim();
+    const iteration = String(iterationEl?.value || "").trim();
+    const note = String(noteEl?.value || "").trim();
+    const tags = String(tagsEl?.value || "").trim();
+    const file = state.importFile || plyEl?.files?.[0] || null;
+
+    if (!sceneName) {
+      if (errorEl) {
+        errorEl.style.display = "block";
+        errorEl.textContent = "请填写场景名。";
+      }
+      return;
+    }
+    if (!runName) {
+      if (errorEl) {
+        errorEl.style.display = "block";
+        errorEl.textContent = "请填写名称。";
+      }
+      return;
+    }
+    if (!file) {
+      if (errorEl) {
+        errorEl.style.display = "block";
+        errorEl.textContent = "请先选择一个 PLY 文件。";
+      }
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("payload", JSON.stringify({ sceneName, runName, iteration, note, tags }));
+    formData.append("ply", file);
+
+    try {
+      if (submitBtn) {
+        submitBtn.setAttribute("disabled", "true");
+        submitBtn.textContent = "导入中...";
+      }
+      const job = await importHistoryRecord(formData);
+      markHistoryImportSeen(job.sceneName);
+      closeImportDialog();
+      state.jobs = await fetchHistoryJobs(state.scene);
+      renderList();
+      if (job?.id) {
+        void openDrawer(job.id, "overview", { replace: true });
+      }
+    } catch (error) {
+      if (errorEl) {
+        errorEl.style.display = "block";
+        errorEl.textContent = error instanceof Error ? error.message : "导入失败。";
+      }
+    } finally {
+      if (submitBtn) {
+        submitBtn.removeAttribute("disabled");
+        submitBtn.textContent = "导入";
+      }
     }
   });
 
