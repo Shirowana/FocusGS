@@ -1899,6 +1899,57 @@ section {
   align-items: center;
   gap: 16px;
 }
+
+/* Topbar page title (shared by Showcase/Train/History) */
+.topbar__page-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.topbar__page-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--primary);
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.18);
+  flex-shrink: 0;
+}
+
+.topbar__page-sep {
+  width: 1px;
+  height: 16px;
+  background: rgba(148, 163, 184, 0.28);
+  flex-shrink: 0;
+}
+
+.topbar__page-desc {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-theme="dark"] .topbar__page-pill {
+  background: rgba(59, 130, 246, 0.16);
+  border-color: rgba(96, 165, 250, 0.22);
+}
+
+[data-theme="dark"] .topbar__page-sep {
+  background: rgba(148, 163, 184, 0.22);
+}
+
+[data-theme="dark"] .topbar__page-desc {
+  color: rgba(226, 232, 240, 0.74);
+}
 .topbar__title-wrapper .eyebrow {
   margin: 0;
   font-size: 10px;
@@ -3358,8 +3409,15 @@ section {
   grid-template-rows: auto 1fr;
   height: 100vh;
   overflow: hidden;
-  /* Remove the big whitespace between topbar and the history content. */
-  gap: 0;
+  /* Match other studio pages so edges line up. */
+  gap: 16px;
+  padding: 12px 16px 16px;
+}
+
+.studio-layout--history > .topbar {
+  /* The global topbar spans 3 columns in workspace pages (grid-column: 1 / 4).
+     History uses a single-column grid; keep it from creating implicit columns. */
+  grid-column: 1 / -1;
 }
 
 .history-shell {
@@ -3377,16 +3435,88 @@ section {
   padding-top: 0;
 }
 
-.history-main {
+.history-board {
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: linear-gradient(180deg, rgba(255,255,255,0.80) 0%, rgba(248, 250, 252, 0.72) 100%);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06), inset 0 1px 0 rgba(255,255,255,0.78);
+  display: flex;
+  /* Ensure content starts at the top; avoid any accidental centering. */
+  justify-content: flex-start;
+  align-items: stretch;
+  /* Keep top whitespace close to Favorites. */
+  padding: 18px;
+  width: 100%;
+  justify-self: stretch;
+}
+
+[data-theme="dark"] .history-board {
+  border-color: var(--studio-border-soft);
+  background: linear-gradient(180deg, rgba(14, 23, 39, 0.92) 0%, rgba(10, 18, 33, 0.90) 100%);
+  box-shadow: var(--studio-shadow-soft), inset 0 1px 0 rgba(255,255,255,0.03);
+}
+
+.history-board__inner {
+  flex: 1;
+  min-height: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 14px;
+  /* head / filters / list */
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 0;
+  padding: 0;
+  width: 100%;
+  max-width: none;
+}
+
+.history-board__inner > .history-v1-toolbar,
+.history-board__inner > .history-v1-list {
   min-height: 0;
 }
 
-.history-main > .history-v1-toolbar,
-.history-main > .history-v1-list {
-  min-height: 0;
+.history-board__inner > .history-v1-toolbar {
+  /* Card already provides the 18px inset; keep toolbar tight. */
+  padding: 10px 0 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(255,255,255,0.58);
+}
+
+[data-theme="dark"] .history-board__inner > .history-v1-toolbar {
+  border-bottom-color: rgba(148, 163, 184, 0.12);
+  background: rgba(8, 17, 31, 0.35);
+}
+
+.history-board__inner > .history-v1-list {
+  padding: 10px 0 0;
+}
+
+.history-board__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.history-board__head h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.history-board__eyebrow {
+  margin: 0 0 6px;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: var(--primary);
+  font-weight: 800;
+}
+
+.history-board__head .history-count {
+  margin-bottom: 1px;
 }
 
 .history-favorites {

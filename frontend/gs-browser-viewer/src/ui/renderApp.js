@@ -1128,6 +1128,18 @@ function buildPageSwitch(sceneId = "garden", activePage = "home") {
   `;
 }
 
+function buildTopbarPageTitle(pageLabel = "", pageDetail = "") {
+  const label = escapeHtml(pageLabel);
+  const detail = escapeHtml(pageDetail);
+  return `
+    <div class="topbar__page-title" aria-label="页面标题">
+      <span class="topbar__page-pill">${label}</span>
+      <span class="topbar__page-sep" aria-hidden="true"></span>
+      <span class="topbar__page-desc">${detail}</span>
+    </div>
+  `;
+}
+
 function buildMethodVisual() {
   return `
     <div class="method-visual">
@@ -4224,10 +4236,7 @@ export function renderWorkspacePage(
               <span class="home-nav-brand__subtitle">Memory-Efficient 3D Gaussian Splatting</span>
             </span>
           </a>
-          <div class="topbar__title-wrapper">
-             <p class="eyebrow">展示</p>
-             <h1>${selectedScene.name}</h1>
-          </div>
+          ${buildTopbarPageTitle("展示", selectedScene?.name || selectedScene?.id || "")}
         </div>
         <div class="topbar__actions">
            ${buildPageSwitch(selectedScene.id, "showcase")}
@@ -4338,10 +4347,7 @@ export function renderTrainPage(scenes, selectedScene) {
               <span class="home-nav-brand__subtitle">Memory-Efficient 3D Gaussian Splatting</span>
             </span>
           </a>
-          <div class="topbar__title-wrapper">
-             <p class="eyebrow">训练</p>
-             <h1>三维重建训练</h1>
-          </div>
+          ${buildTopbarPageTitle("训练", "三维重建训练")}
         </div>
         <div class="topbar__actions">
           ${buildPageSwitch(scene.id, "train")}
@@ -4448,10 +4454,7 @@ export function renderHistoryPage(scenes, selectedScene) {
               <span class="home-nav-brand__subtitle">Memory-Efficient 3D Gaussian Splatting</span>
             </span>
           </a>
-          <div class="topbar__title-wrapper">
-             <p class="eyebrow">历史</p>
-             <h1>实验与结果记录</h1>
-          </div>
+          ${buildTopbarPageTitle("历史", "实验结果与记录")}
         </div>
         <div class="topbar__actions">
           ${buildPageSwitch(scene.id, "history")}
@@ -4490,42 +4493,51 @@ export function renderHistoryPage(scenes, selectedScene) {
           </div>
         </aside>
 
-        <section class="history-main">
-          <div class="history-v1-toolbar" aria-label="History filters">
-            <div class="history-filter">
-              <div class="history-filter__field history-filter__field--search">
-                <label for="history-search" class="history-filter__label">搜索</label>
-                <input id="history-search" type="search" class="input-field" placeholder="scene / jobId / 关键词" />
-              </div>
-              <div class="history-filter__field">
-                <label for="history-scene-select" class="history-filter__label">场景</label>
-                <select id="history-scene-select" class="workspace-params-input">
-                  <option value="">All scenes</option>
-                  ${sceneOptions}
-                </select>
-              </div>
-              <div class="history-filter__field">
-                <label for="history-sort-select" class="history-filter__label">排序</label>
-                <select id="history-sort-select" class="workspace-params-input">
-                  <option value="updated_desc" selected>Updated ↓</option>
-                  <option value="created_desc">Created ↓</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="history-filter__chips">
-              <div class="segmented-control history-status-chips" id="history-status-chips">
-                <button class="segment active" type="button" data-status="all">All</button>
-                <button class="segment" type="button" data-status="running">Running</button>
-                <button class="segment" type="button" data-status="success">Success</button>
-                <button class="segment" type="button" data-status="failed">Failed</button>
-                <button class="segment" type="button" data-status="cancelled">Cancelled</button>
+        <section class="history-board" aria-label="History board">
+          <div class="history-board__inner">
+            <div class="history-board__head">
+              <div>
+                <p class="history-board__eyebrow">HISTORY</p>
+                <h2>历史记录</h2>
               </div>
               <span class="history-count" id="history-v1-count">—</span>
             </div>
-          </div>
+            <div class="history-v1-toolbar" aria-label="History filters">
+              <div class="history-filter">
+                <div class="history-filter__field history-filter__field--search">
+                  <label for="history-search" class="history-filter__label">搜索</label>
+                  <input id="history-search" type="search" class="input-field" placeholder="scene / jobId / 关键词" />
+                </div>
+                <div class="history-filter__field">
+                  <label for="history-scene-select" class="history-filter__label">场景</label>
+                  <select id="history-scene-select" class="workspace-params-input">
+                    <option value="">All scenes</option>
+                    ${sceneOptions}
+                  </select>
+                </div>
+                <div class="history-filter__field">
+                  <label for="history-sort-select" class="history-filter__label">排序</label>
+                  <select id="history-sort-select" class="workspace-params-input">
+                    <option value="updated_desc" selected>Updated ↓</option>
+                    <option value="created_desc">Created ↓</option>
+                  </select>
+                </div>
+              </div>
 
-          <div class="history-v1-list" id="history-v1-list" aria-label="History list"></div>
+              <div class="history-filter__chips">
+                <div class="segmented-control history-status-chips" id="history-status-chips">
+                  <button class="segment active" type="button" data-status="all">All</button>
+                  <button class="segment" type="button" data-status="running">Running</button>
+                  <button class="segment" type="button" data-status="success">Success</button>
+                  <button class="segment" type="button" data-status="failed">Failed</button>
+                  <button class="segment" type="button" data-status="cancelled">Cancelled</button>
+                </div>
+                <span class="history-count" id="history-v1-count">—</span>
+              </div>
+            </div>
+
+            <div class="history-v1-list" id="history-v1-list" aria-label="History list"></div>
+          </div>
         </section>
       </main>
     </div>
